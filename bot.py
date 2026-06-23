@@ -1,6 +1,10 @@
 """
 YouTube RAG Telegram Bot
-Stack: Ollama (gemma3:4b) + LangGraph + ChromaDB + youtube-transcript-api
+Supports two providers via PROVIDER= in .env:
+  - ollama   → local Ollama (dev / no cost)
+  - bedrock  → AWS Bedrock (production / pay-per-token)
+
+Stack: LangGraph + ChromaDB + youtube-transcript-api
 """
 
 import os
@@ -15,11 +19,11 @@ from telegram.ext import (
     ConversationHandler, filters, ContextTypes
 )
 
-from langchain_ollama import ChatOllama, OllamaEmbeddings
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.embeddings import Embeddings
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
-
 from langgraph.graph import StateGraph, START, END
 
 import tiktoken
@@ -27,7 +31,6 @@ from youtube_transcript_api import (
     YouTubeTranscriptApi,
     TranscriptsDisabled,
     NoTranscriptFound,
-    CouldNotRetrieveTranscript,
 )
 
 load_dotenv()
@@ -38,18 +41,28 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ── Constants ──────────────────────────────────────────────────────────────────
-TELEGRAM_TOKEN  = os.getenv("TELEGRAM_TOKEN")
-OLLAMA_MODEL    = os.getenv("OLLAMA_MODEL", "gemma3:4b")
+
+# ── Config ─────────────────────────────────────────────────────────────────────
+PROVIDER       = os.getenv("PROVIDER", "ollama").lower()  # "ollama" | "bedrock"
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+CHROMA_DIR     = os.getenv("CHROMA_DIR", "./chroma_db")
+
+# Ollama settings (used when PROVIDER=ollama)
+OLLAMA_MODEL    = os.getenv("OLLAMA_MODEL",    "gemma3:4b")
+OLLAMA_EMBED    = os.getenv("OLLAMA_EMBED",    "nomic-embed-text")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-EMBED_MODEL     = os.getenv("EMBED_MODEL", "nomic-embed-text")
-CHROMA_DIR      = os.getenv("CHROMA_DIR", "./chroma_db")
 
-CHUNK_TOKENS    = 300
-OVERLAP_RATIO   = 0.10   # 10% overlap
-OVERLAP_TOKENS  = int(CHUNK_TOKENS * OVERLAP_RATIO)  # = 30 tokens
+# Bedrock settings (used when PROVIDER=bedrock)
+AWS_REGION        = os.getenv("AWS_REGION",        "us-east-1")
+BEDROCK_LLM_MODEL = os.getenv("BEDROCK_LLM_MODEL", "amazon.nova-lite-v1:0")
+BEDROCK_EMBED_MODEL = os.getenv("BEDROCK_EMBED_MODEL",
+                                "cohere.embed-multilingual-v3")
 
-# ConversationHandler states
+# Chunking
+CHUNK_TOKENS   = 300
+OVERLAP_TOKENS = int(CHUNK_TOKENS * 0.10)  # 30 tokens (10%)
+
+# Conversation states
 ASK_URL, ASK_LANG, ASK_QUESTION = range(3)
 
 SUPPORTED_LANGS = {
@@ -68,21 +81,49 @@ If the answer is not contained in the context, honestly say so.
 Reference specific moments from the video when possible."""
 
 
-# ── Utilities ──────────────────────────────────────────────────────────────────
-def extract_video_id(url: str) -> Optional[str]:
-    """Extracts video_id from various YouTube URL formats."""
-    patterns = [
-        r"(?:v=|youtu\.be/|embed/|shorts/)([A-Za-z0-9_-]{11})",
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, url)
-        if match:
-            return match.group(1)
-    return None
+# ── Provider factory ────────────────────────────────────────────────────────────
+def build_llm() -> BaseChatModel:
+    """Returns the correct LLM based on PROVIDER."""
+    if PROVIDER == "bedrock":
+        from langchain_aws import ChatBedrockConverse
+        logger.info(f"🟠 LLM: Bedrock / {BEDROCK_LLM_MODEL}")
+        return ChatBedrockConverse(
+            model=BEDROCK_LLM_MODEL,
+            region_name=AWS_REGION,
+            temperature=0.3,
+            max_tokens=1024,
+        )
+    else:
+        from langchain_ollama import ChatOllama
+        logger.info(f"🟢 LLM: Ollama / {OLLAMA_MODEL}")
+        return ChatOllama(
+            model=OLLAMA_MODEL,
+            base_url=OLLAMA_BASE_URL,
+            temperature=0.3,
+            num_predict=1024,
+        )
 
 
+def build_embeddings() -> Embeddings:
+    """Returns the correct embedding model based on PROVIDER."""
+    if PROVIDER == "bedrock":
+        from langchain_aws import BedrockEmbeddings
+        logger.info(f"🟠 Embeddings: Bedrock / {BEDROCK_EMBED_MODEL}")
+        return BedrockEmbeddings(
+            model_id=BEDROCK_EMBED_MODEL,
+            region_name=AWS_REGION,
+        )
+    else:
+        from langchain_ollama import OllamaEmbeddings
+        logger.info(f"🟢 Embeddings: Ollama / {OLLAMA_EMBED}")
+        return OllamaEmbeddings(
+            model=OLLAMA_EMBED,
+            base_url=OLLAMA_BASE_URL,
+        )
+
+
+# ── Tokenizer ──────────────────────────────────────────────────────────────────
 def _get_encoder():
-    """Returns a tiktoken encoder, or None if unavailable."""
     try:
         return tiktoken.get_encoding("cl100k_base")
     except Exception:
@@ -90,43 +131,31 @@ def _get_encoder():
 
 
 def count_tokens(text: str) -> int:
-    """Counts the number of tokens in the text."""
     enc = _get_encoder()
-    if enc:
-        return len(enc.encode(text))
-    # Fallback: ~4 characters = 1 token (GPT rule of thumb)
-    return len(text) // 4
+    return len(enc.encode(text)) if enc else len(text) // 4
 
 
-def split_into_chunks(text: str, chunk_size: int = CHUNK_TOKENS,
+def split_into_chunks(text: str,
+                      chunk_size: int = CHUNK_TOKENS,
                       overlap: int = OVERLAP_TOKENS) -> list[str]:
     """
-    Splits text into chunks of chunk_size tokens with `overlap` tokens
-    of overlap between consecutive chunks.
-    Uses tiktoken if available, otherwise falls back to a character-based method.
+    Splits text into chunks of chunk_size tokens with overlap.
+    Falls back to character-based splitting if tiktoken is unavailable.
     """
     enc = _get_encoder()
-
     if enc:
-        # Precise counting via tiktoken
         tokens = enc.encode(text)
-        chunks = []
-        start  = 0
+        chunks, start = [], 0
         while start < len(tokens):
-            end        = min(start + chunk_size, len(tokens))
-            chunk_text = enc.decode(tokens[start:end])
-            chunks.append(chunk_text)
+            end = min(start + chunk_size, len(tokens))
+            chunks.append(enc.decode(tokens[start:end]))
             if end == len(tokens):
                 break
             start = end - overlap
         return chunks
-
     else:
-        # Fallback: split by characters (~4 chars = 1 token)
-        char_size    = chunk_size * 4
-        char_overlap = overlap * 4
-        chunks       = []
-        start        = 0
+        char_size, char_overlap = chunk_size * 4, overlap * 4
+        chunks, start = [], 0
         while start < len(text):
             end = min(start + char_size, len(text))
             chunks.append(text[start:end])
@@ -136,27 +165,26 @@ def split_into_chunks(text: str, chunk_size: int = CHUNK_TOKENS,
         return chunks
 
 
+# ── YouTube transcript ──────────────────────────────────────────────────────────
+def extract_video_id(url: str) -> Optional[str]:
+    match = re.search(r"(?:v=|youtu\.be/|embed/|shorts/)([A-Za-z0-9_-]{11})", url)
+    return match.group(1) if match else None
+
+
 def get_transcript(video_id: str, lang: str) -> tuple[str, str]:
-    """
-    Downloads the transcript from YouTube.
-    Returns (text, status_message).
-    """
+    """Downloads transcript. Returns (full_text, status_message)."""
     api = YouTubeTranscriptApi()
     try:
         fetched  = api.fetch(video_id, languages=[lang])
-        snippets = [entry.text for entry in fetched]
+        snippets = [e.text for e in fetched]
         return " ".join(snippets), f"✅ Transcript loaded ({len(snippets)} segments)"
 
     except NoTranscriptFound:
-        # Try to fall back to any available transcript
         try:
-            transcript_list = api.list(video_id)
-            for t in transcript_list:
-                fetched  = t.fetch()
-                snippets = [entry.text for entry in fetched]
+            for t in api.list(video_id):
+                snippets = [e.text for e in t.fetch()]
                 return " ".join(snippets), (
-                    f"⚠️ No transcript found for language '{lang}'. "
-                    f"Used instead: {t.language_code}"
+                    f"⚠️ No '{lang}' transcript. Using: {t.language_code}"
                 )
         except Exception as e:
             raise NoTranscriptFound(video_id, [lang]) from e
@@ -167,64 +195,45 @@ def get_transcript(video_id: str, lang: str) -> tuple[str, str]:
 
 # ── Vector store ───────────────────────────────────────────────────────────────
 def init_vectorstore(video_id: str) -> Chroma:
-    """Initializes or loads the vector store for a specific video."""
-    embeddings = OllamaEmbeddings(
-        model=EMBED_MODEL,
-        base_url=OLLAMA_BASE_URL,
-    )
-    vectorstore = Chroma(
+    return Chroma(
         collection_name=f"video_{video_id}",
-        embedding_function=embeddings,
+        embedding_function=build_embeddings(),
         persist_directory=CHROMA_DIR,
     )
-    return vectorstore
 
 
-def index_transcript(video_id: str, transcript_text: str, lang: str) -> tuple[Chroma, int]:
-    """
-    Splits the transcript into chunks and writes them to ChromaDB.
-    Returns (vectorstore, number_of_chunks).
-    """
-    chunks = split_into_chunks(transcript_text)
-
+def index_transcript(video_id: str, text: str, lang: str) -> tuple[Chroma, int]:
+    """Chunks the transcript and upserts into ChromaDB."""
+    chunks = split_into_chunks(text)
     docs = [
         Document(
             page_content=chunk,
-            metadata={
-                "video_id":  video_id,
-                "lang":      lang,
-                "chunk_idx": i,
-                "total":     len(chunks),
-            }
+            metadata={"video_id": video_id, "lang": lang,
+                       "chunk_idx": i, "total": len(chunks)},
         )
         for i, chunk in enumerate(chunks)
     ]
-
-    vectorstore = init_vectorstore(video_id)
-
-    # If the video was already indexed, clear the old collection
-    existing = vectorstore.get()
+    vs = init_vectorstore(video_id)
+    existing = vs.get()
     if existing["ids"]:
-        vectorstore.delete(existing["ids"])
+        vs.delete(existing["ids"])
         logger.info(f"🗑️ Cleared old collection for {video_id}")
-
-    vectorstore.add_documents(docs)
-    logger.info(f"📦 Stored {len(docs)} chunks for video {video_id}")
-
-    return vectorstore, len(docs)
+    vs.add_documents(docs)
+    logger.info(f"📦 Stored {len(docs)} chunks for {video_id}")
+    return vs, len(docs)
 
 
-# ── LangGraph state and nodes ────────────────────────────────────────────────────
+# ── LangGraph ──────────────────────────────────────────────────────────────────
 class RAGState(TypedDict):
-    question:    str
-    context:     str
-    answer:      str
-    video_id:    str
+    question: str
+    context:  str
+    answer:   str
+    video_id: str
 
 
 def make_retrieve_node(vectorstore: Chroma):
     def retrieve(state: RAGState) -> RAGState:
-        logger.info(f"🔍 Searching context for: {state['question']}")
+        logger.info(f"🔍 Retrieving context for: {state['question']}")
         docs = vectorstore.similarity_search(state["question"], k=4)
         context = "\n\n---\n\n".join(
             f"[Chunk {d.metadata.get('chunk_idx', '?')}]\n{d.page_content}"
@@ -234,7 +243,7 @@ def make_retrieve_node(vectorstore: Chroma):
     return retrieve
 
 
-def make_generate_node(llm: ChatOllama):
+def make_generate_node(llm: BaseChatModel):
     def generate(state: RAGState) -> RAGState:
         logger.info("✍️ Generating answer...")
         messages = [
@@ -250,7 +259,7 @@ def make_generate_node(llm: ChatOllama):
     return generate
 
 
-def build_rag_graph(vectorstore: Chroma, llm: ChatOllama):
+def build_rag_graph(vectorstore: Chroma, llm: BaseChatModel):
     graph = StateGraph(RAGState)
     graph.add_node("retrieve", make_retrieve_node(vectorstore))
     graph.add_node("generate", make_generate_node(llm))
@@ -260,7 +269,16 @@ def build_rag_graph(vectorstore: Chroma, llm: ChatOllama):
     return graph.compile()
 
 
-# ── Telegram ConversationHandler ─────────────────────────────────────────────────
+# ── Telegram helpers ───────────────────────────────────────────────────────────
+async def safe_update(msg, text: str, **kwargs):
+    """edit_text with automatic fallback to reply_text on failure."""
+    try:
+        await msg.edit_text(text, **kwargs)
+    except Exception:
+        await msg.reply_text(text, **kwargs)
+
+
+# ── Conversation handlers ──────────────────────────────────────────────────────
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text(
         "👋 Hi! I analyze YouTube videos using their transcripts.\n\n"
@@ -273,51 +291,32 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def receive_url(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     url      = update.message.text.strip()
     video_id = extract_video_id(url)
-
     if not video_id:
         await update.message.reply_text(
             "❌ Couldn't recognize a YouTube link.\n"
-            "Send it in the format: https://youtube.com/watch?v=XXXXXXXXXXX"
+            "Format: https://youtube.com/watch?v=XXXXXXXXXXX"
         )
         return ASK_URL
 
     context.user_data["video_id"] = video_id
-    context.user_data["url"]      = url
-
-    # Language selection keyboard
     keyboard = [[f"{code} — {name}"] for code, name in SUPPORTED_LANGS.items()]
-
     await update.message.reply_text(
-        f"✅ Video found: `{video_id}`\n\n"
-        "🌐 Specify the transcript language:",
+        f"✅ Video found: `{video_id}`\n\n🌐 Specify the transcript language:",
         parse_mode="Markdown",
         reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True),
     )
     return ASK_LANG
 
 
-async def safe_update(msg, text: str, **kwargs):
-    """
-    Safely updates a message.
-    If edit_text fails (BadRequest) — sends a new message instead.
-    """
-    try:
-        await msg.edit_text(text, **kwargs)
-    except Exception:
-        await msg.reply_text(text, **kwargs)
-
-
 async def receive_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    text     = update.message.text.strip()
+    lang     = update.message.text.strip()[:2].lower()
     video_id = context.user_data.get("video_id")
 
-    lang = text[:2].lower()
     if lang not in SUPPORTED_LANGS:
-        await update.message.reply_text("❌ Please choose a language from the keyboard below.")
+        await update.message.reply_text("❌ Please choose a language from the keyboard.")
         return ASK_LANG
 
     context.user_data["lang"] = lang
-
     status_msg = await update.message.reply_text(
         "⏳ Downloading transcript...",
         reply_markup=ReplyKeyboardRemove(),
@@ -329,88 +328,67 @@ async def receive_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
         await safe_update(
             status_msg,
-            f"{status}\n"
-            f"📊 Tokens: {total_tokens}\n"
-            f"⏳ Splitting into chunks and indexing..."
+            f"{status}\n📊 Tokens: {total_tokens}\n⏳ Indexing into vector store..."
         )
 
         llm = context.bot_data["llm"]
         vectorstore, n_chunks = index_transcript(video_id, transcript_text, lang)
-        agent = build_rag_graph(vectorstore, llm)
-
-        context.user_data["agent"]    = agent
-        context.user_data["n_chunks"] = n_chunks
-
-        chunk_info = (
-            f"📦 Chunks: {n_chunks} "
-            f"(~{CHUNK_TOKENS} tokens, {OVERLAP_TOKENS}-token overlap)"
-        )
+        context.user_data["agent"] = build_rag_graph(vectorstore, llm)
 
         await safe_update(
             status_msg,
             f"✅ Video indexed!\n"
-            f"{chunk_info}\n\n"
-            f"💬 Now ask me anything about the video.\n"
-            f"For a new video — /start\n"
-            f"To exit — /cancel"
+            f"📦 {n_chunks} chunks (~{CHUNK_TOKENS} tokens, {OVERLAP_TOKENS}-token overlap)\n"
+            f"🤖 Provider: {'AWS Bedrock' if PROVIDER == 'bedrock' else 'Ollama (local)'}\n\n"
+            f"💬 Ask me anything about the video.\n"
+            f"New video → /start  |  Exit → /cancel"
         )
         return ASK_QUESTION
 
     except TranscriptsDisabled:
-        await safe_update(
-            status_msg,
-            "❌ Transcripts are disabled for this video.\n"
-            "Try a different video or /start"
-        )
+        await safe_update(status_msg,
+            "❌ Transcripts are disabled for this video. Try another or /start")
         return ASK_URL
 
     except NoTranscriptFound:
-        await safe_update(
-            status_msg,
-            f"❌ No transcript found for language '{lang}' on this video.\n"
-            f"Check the video page for available languages.\n"
-            f"Try /start and pick a different language.",
-        )
+        await safe_update(status_msg,
+            f"❌ No '{lang}' transcript found.\n"
+            "Check the video page for available captions.\n"
+            "Try /start with a different language.")
         return ASK_URL
 
     except Exception as e:
         logger.error(f"Indexing error: {e}")
-        await safe_update(
-            status_msg,
-            f"⚠️ Error: {str(e)[:200]}\n"
-            "Try /start"
-        )
+        await safe_update(status_msg, f"⚠️ Error: {str(e)[:200]}\nTry /start")
         return ASK_URL
 
 
 async def receive_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    question = update.message.text.strip()
-    agent    = context.user_data.get("agent")
-
+    agent = context.user_data.get("agent")
     if not agent:
         await update.message.reply_text("❌ Load a video first — /start")
         return ConversationHandler.END
 
     thinking = await update.message.reply_text("🤔 Searching the transcript...")
-
     try:
         result = agent.invoke({
-            "question": question,
+            "question": update.message.text.strip(),
             "context":  "",
             "answer":   "",
             "video_id": context.user_data.get("video_id", ""),
         })
         await safe_update(thinking, result["answer"])
-
     except Exception as e:
         logger.error(f"Agent error: {e}")
-        await safe_update(
-            thinking,
-            "⚠️ Generation error. Make sure Ollama is running:\n`ollama serve`",
-            parse_mode="Markdown",
+        provider_hint = (
+            "Make sure Ollama is running:\n`ollama serve`"
+            if PROVIDER == "ollama"
+            else "Check your AWS credentials and region in .env"
         )
+        await safe_update(thinking, f"⚠️ Generation error.\n{provider_hint}",
+                          parse_mode="Markdown")
 
-    return ASK_QUESTION   # stay in the question-answering state
+    return ASK_QUESTION
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -423,14 +401,20 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    provider_line = (
+        "🟠 *Provider:* AWS Bedrock"
+        if PROVIDER == "bedrock"
+        else "🟢 *Provider:* Ollama (local)"
+    )
     await update.message.reply_text(
         "🤖 *How I work:*\n\n"
         "1️⃣ /start — let's begin\n"
         "2️⃣ Send a YouTube video link\n"
         "3️⃣ Choose the transcript language\n"
-        "4️⃣ I download the transcript and split it into 300-token chunks (10% overlap)\n"
+        "4️⃣ I split the transcript into 300-token chunks (10% overlap)\n"
         "5️⃣ I store them in a ChromaDB vector database\n"
-        "6️⃣ I answer your questions about the video\n\n"
+        "6️⃣ I answer your questions using RAG\n\n"
+        f"{provider_line}\n\n"
         "📌 *Commands:*\n"
         "/start — new video\n"
         "/cancel — end session\n"
@@ -443,15 +427,12 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     if not TELEGRAM_TOKEN:
         raise ValueError("❌ TELEGRAM_TOKEN not found in .env")
+    if PROVIDER not in ("ollama", "bedrock"):
+        raise ValueError(f"❌ Unknown PROVIDER='{PROVIDER}'. Use 'ollama' or 'bedrock'.")
 
-    logger.info(f"🚀 Starting bot. LLM: {OLLAMA_MODEL}, Embeddings: {EMBED_MODEL}")
+    logger.info(f"🚀 Starting bot. Provider: {PROVIDER.upper()}")
 
-    llm = ChatOllama(
-        model=OLLAMA_MODEL,
-        base_url=OLLAMA_BASE_URL,
-        temperature=0.3,
-        num_predict=1024,
-    )
+    llm = build_llm()
 
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.bot_data["llm"] = llm
@@ -468,7 +449,6 @@ def main():
             CommandHandler("start",  start),
         ],
     )
-
     app.add_handler(conv_handler)
     app.add_handler(CommandHandler("help", help_command))
 
