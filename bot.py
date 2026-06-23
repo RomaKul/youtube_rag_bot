@@ -46,6 +46,7 @@ logger = logging.getLogger(__name__)
 PROVIDER       = os.getenv("PROVIDER", "ollama").lower()  # "ollama" | "bedrock"
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHROMA_DIR     = os.getenv("CHROMA_DIR", "./chroma_db")
+SIMILARITY_K   = int(os.getenv("SIMILARITY_K", 4))
 
 # Ollama settings (used when PROVIDER=ollama)
 OLLAMA_MODEL    = os.getenv("OLLAMA_MODEL",    "gemma3:4b")
@@ -195,8 +196,9 @@ def get_transcript(video_id: str, lang: str) -> tuple[str, str]:
 
 # ── Vector store ───────────────────────────────────────────────────────────────
 def init_vectorstore(video_id: str) -> Chroma:
+    embed_tag = PROVIDER # "ollama" or "bedrock"
     return Chroma(
-        collection_name=f"video_{video_id}",
+        collection_name=f"video_{video_id}_{embed_tag}",
         embedding_function=build_embeddings(),
         persist_directory=CHROMA_DIR,
     )
@@ -234,7 +236,7 @@ class RAGState(TypedDict):
 def make_retrieve_node(vectorstore: Chroma):
     def retrieve(state: RAGState) -> RAGState:
         logger.info(f"🔍 Retrieving context for: {state['question']}")
-        docs = vectorstore.similarity_search(state["question"], k=4)
+        docs = vectorstore.similarity_search(state["question"], k=SIMILARITY_K)
         context = "\n\n---\n\n".join(
             f"[Chunk {d.metadata.get('chunk_idx', '?')}]\n{d.page_content}"
             for d in docs
