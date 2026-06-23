@@ -1,122 +1,127 @@
-# 🎬 YouTube RAG Telegram-бот
+# 🎬 YouTube RAG Telegram Bot
 
-Аналізує YouTube відео через субтитри. Задавай питання — бот відповідає на основі вмісту відео.
+Analyzes YouTube videos via their transcripts. Ask questions — the bot answers based on the video's content.
 
-## Стек
-- **Ollama + gemma3:4b** — локальна LLM (без API, безкоштовно)
-- **Ollama + nomic-embed-text** — локальні ембединги
-- **ChromaDB** — локальна векторна база даних
-- **LangGraph** — оркестрація RAG пайплайну
-- **youtube-transcript-api** — завантаження субтитрів
+## Stack
+- **Ollama + gemma3:4b** — local LLM (no API, free)
+- **Ollama + nomic-embed-text** — local embeddings
+- **ChromaDB** — local vector database
+- **LangGraph** — RAG pipeline orchestration
+- **youtube-transcript-api** — transcript downloading
 
 ---
 
-## 🚀 Покрокова інструкція
+## 🚀 Step-by-step setup
 
-### Крок 1 — Встановити Ollama та моделі
+### Step 1 — Install Ollama and models
 
 ```bash
-# Завантаж Ollama з https://ollama.com
+# Download Ollama from https://ollama.com
 
-# Модель для відповідей (~3 GB)
+# Model for answering (~3 GB)
 ollama pull gemma3:4b
 
-# Модель для ембедингів (~274 MB)
+# Model for embeddings (~274 MB)
 ollama pull nomic-embed-text
 ```
 
-### Крок 2 — Створити Telegram бота
+### Step 2 — Create a Telegram bot
 
-1. Знайди @BotFather у Telegram
-2. Напиши `/newbot` і слідуй інструкціям
-3. Скопіюй отриманий токен
+1. Find @BotFather on Telegram
+2. Send `/newbot` and follow the instructions
+3. Copy the token you receive
 
-### Крок 3 — Налаштувати проект
+### Step 3 — Configure the project
 
 ```bash
 cp .env.example .env
-# Вставити TELEGRAM_TOKEN у .env
+# Paste your TELEGRAM_TOKEN into .env
 ```
 
-### Крок 4 — Встановити залежності
+### Step 4 — Install dependencies
 
 ```bash
 python -m venv venv
 source venv/bin/activate      # Mac/Linux
-# або venv\Scripts\activate   # Windows
+# or venv\Scripts\activate    # Windows
 
 pip install -r requirements.txt
 ```
 
-### Крок 5 — Запустити
+### Step 5 — Run
 
 ```bash
-# Термінал 1
+# Terminal 1
 ollama serve
 
-# Термінал 2
+# Terminal 2
 python bot.py
 ```
 
 ---
 
-## 💬 Сценарій роботи
+## 💬 Usage flow
 
 ```
-Користувач: /start
-Бот: Надішли посилання на YouTube відео
+User: /start
+Bot: Send me a YouTube video link
 
-Користувач: https://youtube.com/watch?v=XXXXXXX
-Бот: Вибери мову субтитрів [uk / en / de ...]
+User: https://youtube.com/watch?v=XXXXXXX
+Bot: Specify the transcript language [uk / en / de ...]
 
-Користувач: en — Англійська
-Бот: ✅ Завантажено 847 фраз, 12 чанків (300 токенів, оверлеп 30)
+User: en — English
+Bot: ✅ Loaded 847 segments, 12 chunks (300 tokens, 30 overlap)
 
-Користувач: Про що це відео?
-Бот: [відповідь на основі субтитрів]
+User: What is this video about?
+Bot: [answer based on the transcript]
 
-Користувач: /start   ← нове відео
+User: /start   ← new video
 ```
 
 ---
 
-## ⚙️ Параметри чанкування
+## ⚙️ Chunking parameters
 
-| Параметр | Значення |
+| Parameter | Value |
 |---|---|
-| Розмір чанку | 300 токенів |
-| Оверлеп | 30 токенів (10%) |
-| Токенізатор | tiktoken cl100k_base (або символьний fallback) |
-| Пошук | Top-4 семантично схожих чанків |
+| Chunk size | 300 tokens |
+| Overlap | 30 tokens (10%) |
+| Tokenizer | tiktoken cl100k_base (or character-based fallback) |
+| Retrieval | Top-4 semantically similar chunks |
 
 ---
 
-## 📁 Структура проекту
+## 📁 Project structure
 
 ```
-youtube_rag_bot/
-├── bot.py           # головний файл
+ua_rag_bot/
+├── bot.py           # main file
 ├── requirements.txt
-├── .env             # твої ключі
-├── .env.example     # шаблон
+├── .env             # your secrets
+├── .env.example     # template
 ├── README.md
-└── chroma_db/       # векторна база (створюється автоматично)
+└── chroma_db/       # vector store (created automatically)
 ```
 
 ---
 
-## 🔧 Вирішення проблем
+## 🔧 Troubleshooting
 
-**Ollama не відповідає**
+**Ollama isn't responding**
 ```bash
 curl http://localhost:11434/api/tags
-ollama serve   # якщо не запущена
+ollama serve   # start it if not running
 ```
 
-**Субтитри не знайдено**
-- Перевір чи увімкнені субтитри на сторінці відео
-- Спробуй іншу мову (часто є auto-generated англійські)
+**Transcript not found**
+- Check that captions are enabled on the video's page
+- Try a different language (auto-generated English is often available)
 
-**Повільні відповіді на CPU**
-- Норма: 5-15 секунд на відповідь
-- Легша альтернатива: `OLLAMA_MODEL=llama3.2:3b`
+**Slow responses on CPU**
+- Normal: 5-15 seconds per response
+- Lighter alternative: `OLLAMA_MODEL=llama3.2:3b`
+
+**YouTube blocks the request (403 / PoToken errors)**
+- This is a YouTube anti-bot measure, not a bug in this code
+- Try upgrading: `pip install --upgrade youtube-transcript-api`
+- Or pass browser cookies to the API (see library docs for `cookies` support)
