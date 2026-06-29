@@ -204,17 +204,70 @@ def init_vectorstore(video_id: str) -> Chroma:
     )
 
 
-def index_transcript(video_id: str, text: str, lang: str) -> tuple[Chroma, int]:
-    """Chunks the transcript and upserts into ChromaDB."""
+SUMMARY_PROMPT = """You are given a YouTube video transcript.
+Write a concise summary (5-7 sentences) covering:
+- The main topic and purpose of the video
+- Key points or arguments made
+- Any notable conclusions
+
+Transcript (may be truncated):
+{transcript}"""
+
+
+def generate_summary(text: str, llm: BaseChatModel) -> str:
+    """Generates a short summary of the full transcript using the LLM."""
+    # Use first ~3000 tokens worth of characters to stay within context limits
+    preview = text[:3000]
+    try:
+        response = llm.invoke([
+            HumanMessage(content=SUMMARY_PROMPT.format(transcript=preview))
+        ])
+        return response.content
+    except Exception as e:
+        logger.warning(f"Summary generation failed: {e}")
+        return ""
+
+
+def index_transcript(video_id: str, text: str, lang: str,
+                     llm: BaseChatModel) -> tuple[Chroma, int]:
+    """
+    Chunks the transcript and upserts into ChromaDB.
+    Also generates and stores a full-video summary as a special document
+    so broad questions like "what is this video about?" are answered well.
+    """
     chunks = split_into_chunks(text)
+
+    # Regular chunk documents
     docs = [
         Document(
             page_content=chunk,
-            metadata={"video_id": video_id, "lang": lang,
-                       "chunk_idx": i, "total": len(chunks)},
+            metadata={
+                "video_id":  video_id,
+                "lang":      lang,
+                "chunk_idx": i,
+                "total":     len(chunks),
+                "type":      "chunk",
+            },
         )
         for i, chunk in enumerate(chunks)
     ]
+
+    # Summary document — broad semantic coverage of the entire video
+    logger.info("Generating video summary...")
+    summary = generate_summary(text, llm)
+    if summary:
+        docs.append(Document(
+            page_content=summary,
+            metadata={
+                "video_id":  video_id,
+                "lang":      lang,
+                "chunk_idx": -1,   # -1 flags this as the summary
+                "total":     len(chunks),
+                "type":      "summary",
+            },
+        ))
+        logger.info("Summary stored as special document")
+
     vs = init_vectorstore(video_id)
     existing = vs.get()
     if existing["ids"]:
@@ -253,7 +306,8 @@ def make_generate_node(llm: BaseChatModel):
             HumanMessage(content=(
                 f"Video transcript context:\n{state['context']}\n\n"
                 f"Question: {state['question']}\n\n"
-                "Provide a detailed answer based on the context above."
+                "Provide a detailed answer based on the context above. "
+                "Answer in the same language the question is written in."
             )),
         ]
         response = llm.invoke(messages)
@@ -334,7 +388,7 @@ async def receive_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         )
 
         llm = context.bot_data["llm"]
-        vectorstore, n_chunks = index_transcript(video_id, transcript_text, lang)
+        vectorstore, n_chunks = index_transcript(video_id, transcript_text, lang, llm)
         context.user_data["agent"] = build_rag_graph(vectorstore, llm)
 
         await safe_update(
