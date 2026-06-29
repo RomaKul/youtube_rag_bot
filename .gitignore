@@ -2,3 +2,5 @@
 venv
 *.ipynb
 chroma_db
+ytbot-key.pem
+__pycache__

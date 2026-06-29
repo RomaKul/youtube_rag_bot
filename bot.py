@@ -10,7 +10,7 @@ Stack: LangGraph + ChromaDB + youtube-transcript-api
 import os
 import re
 import logging
-from typing import TypedDict, Optional
+from typing import TypedDict, Optional, List
 from dotenv import load_dotenv
 
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
@@ -31,6 +31,13 @@ from youtube_transcript_api import (
     YouTubeTranscriptApi,
     TranscriptsDisabled,
     NoTranscriptFound,
+)
+
+# Import chunking utilities
+from chunking import (
+    ChunkingConfig, Segment, build_documents,
+    segments_from_fetched, format_timestamp, youtube_deep_link,
+    _count_tokens,                  # moved from bot.py
 )
 
 load_dotenv()
@@ -59,9 +66,11 @@ BEDROCK_LLM_MODEL = os.getenv("BEDROCK_LLM_MODEL", "amazon.nova-lite-v1:0")
 BEDROCK_EMBED_MODEL = os.getenv("BEDROCK_EMBED_MODEL",
                                 "cohere.embed-multilingual-v3")
 
-# Chunking
-CHUNK_TOKENS   = 300
-OVERLAP_TOKENS = int(CHUNK_TOKENS * 0.10)  # 30 tokens (10%)
+# Chunking (now configurable via .env)
+CHUNK_STRATEGY   = os.getenv("CHUNK_STRATEGY", "timestamp")   # sentence | timestamp | semantic
+CHUNK_TOKENS     = int(os.getenv("CHUNK_TOKENS",    300))
+OVERLAP_TOKENS   = int(os.getenv("OVERLAP_TOKENS",   30))
+SIMILARITY_THR   = float(os.getenv("SIMILARITY_THR", 0.75))   # semantic only
 
 # Conversation states
 ASK_URL, ASK_LANG, ASK_QUESTION = range(3)
@@ -79,6 +88,7 @@ SUPPORTED_LANGS = {
 SYSTEM_PROMPT = """You are an AI assistant that analyzes YouTube videos.
 Use the provided video transcript context to answer accurately.
 If the answer is not contained in the context, honestly say so.
+When citing specific parts, refer to them by their timestamp labels (e.g., [Timestamp: 01:23]) if available, otherwise by chunk number.
 Reference specific moments from the video when possible."""
 
 
@@ -123,68 +133,28 @@ def build_embeddings() -> Embeddings:
         )
 
 
-# ── Tokenizer ──────────────────────────────────────────────────────────────────
-def _get_encoder():
-    try:
-        return tiktoken.get_encoding("cl100k_base")
-    except Exception:
-        return None
-
-
-def count_tokens(text: str) -> int:
-    enc = _get_encoder()
-    return len(enc.encode(text)) if enc else len(text) // 4
-
-
-def split_into_chunks(text: str,
-                      chunk_size: int = CHUNK_TOKENS,
-                      overlap: int = OVERLAP_TOKENS) -> list[str]:
-    """
-    Splits text into chunks of chunk_size tokens with overlap.
-    Falls back to character-based splitting if tiktoken is unavailable.
-    """
-    enc = _get_encoder()
-    if enc:
-        tokens = enc.encode(text)
-        chunks, start = [], 0
-        while start < len(tokens):
-            end = min(start + chunk_size, len(tokens))
-            chunks.append(enc.decode(tokens[start:end]))
-            if end == len(tokens):
-                break
-            start = end - overlap
-        return chunks
-    else:
-        char_size, char_overlap = chunk_size * 4, overlap * 4
-        chunks, start = [], 0
-        while start < len(text):
-            end = min(start + char_size, len(text))
-            chunks.append(text[start:end])
-            if end == len(text):
-                break
-            start = end - char_overlap
-        return chunks
-
-
 # ── YouTube transcript ──────────────────────────────────────────────────────────
 def extract_video_id(url: str) -> Optional[str]:
     match = re.search(r"(?:v=|youtu\.be/|embed/|shorts/)([A-Za-z0-9_-]{11})", url)
     return match.group(1) if match else None
 
 
-def get_transcript(video_id: str, lang: str) -> tuple[str, str]:
-    """Downloads transcript. Returns (full_text, status_message)."""
+def get_transcript(video_id: str, lang: str) -> tuple[str, list[Segment], str]:
+    """Downloads transcript. Returns (full_text, segments, status_message)."""
     api = YouTubeTranscriptApi()
     try:
-        fetched  = api.fetch(video_id, languages=[lang])
-        snippets = [e.text for e in fetched]
-        return " ".join(snippets), f"✅ Transcript loaded ({len(snippets)} segments)"
+        fetched   = api.fetch(video_id, languages=[lang])
+        segments  = segments_from_fetched(fetched)
+        full_text = " ".join(s.text for s in segments)
+        return full_text, segments, f"✅ Transcript loaded ({len(segments)} segments)"
 
     except NoTranscriptFound:
         try:
             for t in api.list(video_id):
-                snippets = [e.text for e in t.fetch()]
-                return " ".join(snippets), (
+                fetched   = t.fetch()
+                segments  = segments_from_fetched(fetched)
+                full_text = " ".join(s.text for s in segments)
+                return full_text, segments, (
                     f"⚠️ No '{lang}' transcript. Using: {t.language_code}"
                 )
         except Exception as e:
@@ -228,73 +198,76 @@ def generate_summary(text: str, llm: BaseChatModel) -> str:
         return ""
 
 
-def index_transcript(video_id: str, text: str, lang: str,
-                     llm: BaseChatModel) -> tuple[Chroma, int]:
+def index_transcript(
+    video_id: str,
+    text: str,
+    lang: str,
+    llm: BaseChatModel,
+    segments: list[Segment] | None = None,
+) -> tuple[Chroma, int]:
     """
-    Chunks the transcript and upserts into ChromaDB.
-    Also generates and stores a full-video summary as a special document
-    so broad questions like "what is this video about?" are answered well.
+    Chunks the transcript using the selected strategy and upserts into ChromaDB.
+    Also generates and stores a full‑video summary as a special document.
     """
-    chunks = split_into_chunks(text)
+    cfg = ChunkingConfig(
+        strategy=CHUNK_STRATEGY,
+        chunk_tokens=CHUNK_TOKENS,
+        overlap_tokens=OVERLAP_TOKENS,
+        similarity_threshold=SIMILARITY_THR,
+    )
 
-    # Regular chunk documents
-    docs = [
-        Document(
-            page_content=chunk,
-            metadata={
-                "video_id":  video_id,
-                "lang":      lang,
-                "chunk_idx": i,
-                "total":     len(chunks),
-                "type":      "chunk",
-            },
-        )
-        for i, chunk in enumerate(chunks)
-    ]
+    embeddings = build_embeddings()   # reuse existing factory
 
-    # Summary document — broad semantic coverage of the entire video
-    logger.info("Generating video summary...")
+    chunk_docs = build_documents(
+        video_id=video_id,
+        lang=lang,
+        text=text,
+        segments=segments,           # None is safe; timestamp falls back to sentence
+        embeddings=embeddings if CHUNK_STRATEGY == "semantic" else None,
+        config=cfg,
+    )
+
+    # Summary doc (unchanged logic)
     summary = generate_summary(text, llm)
     if summary:
-        docs.append(Document(
+        chunk_docs.append(Document(
             page_content=summary,
-            metadata={
-                "video_id":  video_id,
-                "lang":      lang,
-                "chunk_idx": -1,   # -1 flags this as the summary
-                "total":     len(chunks),
-                "type":      "summary",
-            },
+            metadata={"video_id": video_id, "lang": lang,
+                      "chunk_idx": -1, "type": "summary"},
         ))
-        logger.info("Summary stored as special document")
 
     vs = init_vectorstore(video_id)
     existing = vs.get()
     if existing["ids"]:
         vs.delete(existing["ids"])
-        logger.info(f"🗑️ Cleared old collection for {video_id}")
-    vs.add_documents(docs)
-    logger.info(f"📦 Stored {len(docs)} chunks for {video_id}")
-    return vs, len(docs)
+    vs.add_documents(chunk_docs)
+    logger.info(f"📦 Stored {len(chunk_docs)} docs for {video_id} [{CHUNK_STRATEGY}]")
+    return vs, len(chunk_docs)
 
 
 # ── LangGraph ──────────────────────────────────────────────────────────────────
 class RAGState(TypedDict):
-    question: str
-    context:  str
-    answer:   str
-    video_id: str
+    question:       str
+    context:        str
+    answer:         str
+    video_id:       str
+    retrieved_docs: list   # new — populated by retrieve node
 
 
 def make_retrieve_node(vectorstore: Chroma):
     def retrieve(state: RAGState) -> RAGState:
         logger.info(f"🔍 Retrieving context for: {state['question']}")
         docs = vectorstore.similarity_search(state["question"], k=SIMILARITY_K)
-        context = "\n\n---\n\n".join(
-            f"[Chunk {d.metadata.get('chunk_idx', '?')}]\n{d.page_content}"
-            for d in docs
-        )
-        return {**state, "context": context}
+        # Build context with appropriate labels (timestamp if available)
+        context_parts = []
+        for d in docs:
+            if "timestamp_label" in d.metadata:
+                label = f"[Timestamp: {d.metadata['timestamp_label']}]"
+            else:
+                label = f"[Chunk {d.metadata.get('chunk_idx', '?')}]"
+            context_parts.append(f"{label}\n{d.page_content}")
+        context = "\n\n---\n\n".join(context_parts)
+        return {**state, "context": context, "retrieved_docs": docs}
     return retrieve
 
 
@@ -332,6 +305,21 @@ async def safe_update(msg, text: str, **kwargs):
         await msg.edit_text(text, **kwargs)
     except Exception:
         await msg.reply_text(text, **kwargs)
+
+
+# ── Timestamp citation helper ──────────────────────────────────────────────────
+def _append_timestamp_citations(answer: str, docs: list) -> str:
+    """Appends '📍 Mentioned at: X:XX, Y:YY' if chunks carry timestamps."""
+    links = []
+    for d in docs:
+        if d.metadata.get("strategy") == "timestamp" and "deep_link" in d.metadata:
+            label = d.metadata["timestamp_label"]
+            link  = d.metadata["deep_link"]
+            links.append(f"[{label}]({link})")
+    if links:
+        unique = list(dict.fromkeys(links))   # deduplicate, preserve order
+        return answer + "\n\n📍 *Mentioned at:* " + "  ·  ".join(unique[:4])
+    return answer
 
 
 # ── Conversation handlers ──────────────────────────────────────────────────────
@@ -379,8 +367,8 @@ async def receive_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     )
 
     try:
-        transcript_text, status = get_transcript(video_id, lang)
-        total_tokens = count_tokens(transcript_text)
+        transcript_text, segments, status = get_transcript(video_id, lang)
+        total_tokens = _count_tokens(transcript_text)
 
         await safe_update(
             status_msg,
@@ -388,14 +376,17 @@ async def receive_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         )
 
         llm = context.bot_data["llm"]
-        vectorstore, n_chunks = index_transcript(video_id, transcript_text, lang, llm)
+        vectorstore, n_chunks = index_transcript(
+            video_id, transcript_text, lang, llm, segments=segments
+        )
         context.user_data["agent"] = build_rag_graph(vectorstore, llm)
 
         await safe_update(
             status_msg,
             f"✅ Video indexed!\n"
             f"📦 {n_chunks} chunks (~{CHUNK_TOKENS} tokens, {OVERLAP_TOKENS}-token overlap)\n"
-            f"🤖 Provider: {'AWS Bedrock' if PROVIDER == 'bedrock' else 'Ollama (local)'}\n\n"
+            f"🤖 Provider: {'AWS Bedrock' if PROVIDER == 'bedrock' else 'Ollama (local)'}\n"
+            f"✂️ Chunking: {CHUNK_STRATEGY}  ({CHUNK_TOKENS} tok, {OVERLAP_TOKENS} overlap)\n\n"
             f"💬 Ask me anything about the video.\n"
             f"New video → /start  |  Exit → /cancel"
         )
@@ -433,7 +424,12 @@ async def receive_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             "answer":   "",
             "video_id": context.user_data.get("video_id", ""),
         })
-        await safe_update(thinking, result["answer"])
+        final_answer = result["answer"]
+        # Append timestamp citations if using timestamp strategy
+        if CHUNK_STRATEGY == "timestamp":
+            retrieved_docs = result.get("retrieved_docs", [])
+            final_answer = _append_timestamp_citations(final_answer, retrieved_docs)
+        await safe_update(thinking, final_answer, parse_mode="Markdown")
     except Exception as e:
         logger.error(f"Agent error: {e}")
         provider_hint = (
@@ -467,7 +463,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "1️⃣ /start — let's begin\n"
         "2️⃣ Send a YouTube video link\n"
         "3️⃣ Choose the transcript language\n"
-        "4️⃣ I split the transcript into 300-token chunks (10% overlap)\n"
+        "4️⃣ I split the transcript using the configured chunking strategy\n"
         "5️⃣ I store them in a ChromaDB vector database\n"
         "6️⃣ I answer your questions using RAG\n\n"
         f"{provider_line}\n\n"
