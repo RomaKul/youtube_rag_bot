@@ -18,15 +18,20 @@ FIXED / CHANGED vs. original:
     retrieval.
   - Passes a history_fn and bm25_index_fn into build_routed_rag_graph so the
     RAG graph can do conversation-aware routing + hybrid search.
+  - Removed manual language selection entirely. get_transcript() now lists
+    all available transcripts for the video and picks a manually created
+    one if available (falling back to auto-generated only if necessary),
+    so the user never needs to specify a language. This also removes the
+    ASK_LANG conversation step.
 """
 
 import os
 import re
 import logging
-from typing import TypedDict, Optional
+from typing import Optional
 from dotenv import load_dotenv
 
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram import Update, ReplyKeyboardRemove
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
     ConversationHandler, filters, ContextTypes
@@ -77,9 +82,9 @@ OLLAMA_EMBED    = os.getenv("OLLAMA_EMBED",    "nomic-embed-text")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 
 # Bedrock settings (used when PROVIDER=bedrock)
-AWS_REGION          = os.getenv("AWS_REGION",        "us-east-1")
-BEDROCK_LLM_MODEL    = os.getenv("BEDROCK_LLM_MODEL", "amazon.nova-lite-v1:0")
-BEDROCK_EMBED_MODEL  = os.getenv("BEDROCK_EMBED_MODEL", "cohere.embed-multilingual-v3")
+AWS_REGION           = os.getenv("AWS_REGION",        "us-east-1")
+BEDROCK_LLM_MODEL     = os.getenv("BEDROCK_LLM_MODEL", "amazon.nova-lite-v1:0")
+BEDROCK_EMBED_MODEL   = os.getenv("BEDROCK_EMBED_MODEL", "cohere.embed-multilingual-v3")
 
 # Chunking (configurable via .env)
 CHUNK_STRATEGY   = os.getenv("CHUNK_STRATEGY", "timestamp")   # sentence | timestamp | semantic
@@ -87,18 +92,8 @@ CHUNK_TOKENS     = int(os.getenv("CHUNK_TOKENS",    300))
 OVERLAP_TOKENS   = int(os.getenv("OVERLAP_TOKENS",   30))
 SIMILARITY_THR   = float(os.getenv("SIMILARITY_THR", 0.75))   # semantic only
 
-# Conversation states
-ASK_URL, ASK_LANG, ASK_QUESTION = range(3)
-
-SUPPORTED_LANGS = {
-    "uk": "🇺🇦 Ukrainian",
-    "en": "🇬🇧 English",
-    "de": "🇩🇪 German",
-    "fr": "🇫🇷 French",
-    "pl": "🇵🇱 Polish",
-    "es": "🇪🇸 Spanish",
-    "ru": "🇷🇺 Russian",
-}
+# Conversation states (language selection removed — handled automatically)
+ASK_URL, ASK_QUESTION = range(2)
 
 
 # ── Provider factory ────────────────────────────────────────────────────────────
@@ -148,29 +143,38 @@ def extract_video_id(url: str) -> Optional[str]:
     return match.group(1) if match else None
 
 
-def get_transcript(video_id: str, lang: str) -> tuple[str, list[Segment], str]:
-    """Downloads transcript. Returns (full_text, segments, status_message)."""
+def get_transcript(video_id: str) -> tuple[str, list[Segment], str, str]:
+    """
+    Downloads a transcript for the video, automatically choosing a language.
+    Prefers a manually created transcript (i.e. provided by the uploader,
+    not auto-generated) if one exists in any language; otherwise falls back
+    to an auto-generated transcript.
+
+    Returns (full_text, segments, status_message, lang_code).
+    """
     api = YouTubeTranscriptApi()
+
     try:
-        fetched   = api.fetch(video_id, languages=[lang])
-        segments  = segments_from_fetched(fetched)
-        full_text = " ".join(s.text for s in segments)
-        return full_text, segments, f"✅ Transcript loaded ({len(segments)} segments)"
-
-    except NoTranscriptFound:
-        try:
-            for t in api.list(video_id):
-                fetched   = t.fetch()
-                segments  = segments_from_fetched(fetched)
-                full_text = " ".join(s.text for s in segments)
-                return full_text, segments, (
-                    f"⚠️ No '{lang}' transcript. Using: {t.language_code}"
-                )
-        except Exception as e:
-            raise NoTranscriptFound(video_id, [lang]) from e
-
+        transcript_list = list(api.list(video_id))
     except TranscriptsDisabled:
         raise TranscriptsDisabled(video_id)
+
+    if not transcript_list:
+        raise NoTranscriptFound(video_id, [], {})
+
+    manual = [t for t in transcript_list if not t.is_generated]
+    chosen = manual[0] if manual else transcript_list[0]
+
+    fetched   = chosen.fetch()
+    segments  = segments_from_fetched(fetched)
+    full_text = " ".join(s.text for s in segments)
+
+    kind = "manual" if not chosen.is_generated else "auto-generated"
+    status = (
+        f"✅ Transcript loaded ({len(segments)} segments) — "
+        f"language: {chosen.language} [{chosen.language_code}], {kind}"
+    )
+    return full_text, segments, status, chosen.language_code
 
 
 # ── Vector store ───────────────────────────────────────────────────────────────
@@ -260,7 +264,7 @@ def index_transcript(
             metadata={"video_id": video_id, "lang": lang,
                         "chunk_idx": -1, "type": "summary"},
         ))
-        
+
     vs = init_vectorstore(video_id)
     vs.add_documents(chunk_docs)
     n_docs = len(chunk_docs)
@@ -294,6 +298,27 @@ async def safe_update(msg, text: str, **kwargs):
         await msg.reply_text(text, **kwargs)
 
 
+def _build_agent(context: ContextTypes.DEFAULT_TYPE, vs: Chroma, video_id: str):
+    """Wires up the routed RAG graph with closures over fresh user_data."""
+    llm = context.bot_data["llm"]
+
+    def get_cached_chunks():
+        return load_retrieved_chunks(context.user_data)
+
+    def get_history():
+        return load_history(context.user_data)
+
+    def get_bm25():
+        return load_bm25_index(video_id)
+
+    return build_routed_rag_graph(
+        vs, llm,
+        prev_chunks_fn=get_cached_chunks,
+        history_fn=get_history,
+        bm25_index_fn=get_bm25,
+    )
+
+
 # ── Conversation handlers ──────────────────────────────────────────────────────
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
@@ -316,72 +341,35 @@ async def receive_url(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         return ASK_URL
 
     context.user_data["video_id"] = video_id
-    keyboard = [[f"{code} — {name}"] for code, name in SUPPORTED_LANGS.items()]
-    await update.message.reply_text(
-        f"✅ Video found: `{video_id}`\n\n🌐 Specify the transcript language:",
-        parse_mode="Markdown",
-        reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True),
-    )
-    return ASK_LANG
-
-
-async def receive_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    lang     = update.message.text.strip()[:2].lower()
-    video_id = context.user_data.get("video_id")
-
-    if lang not in SUPPORTED_LANGS:
-        await update.message.reply_text("❌ Please choose a language from the keyboard.")
-        return ASK_LANG
-
-    context.user_data["lang"] = lang
 
     # ── Check if this video is already indexed ──────────────────────────
     vs = init_vectorstore(video_id)
     existing_ids = vs.get().get("ids", [])
     if existing_ids:
         # Already have chunks → skip transcript download entirely
-        await update.message.reply_text(
-            "✅ Video already indexed – using existing data.",
-            reply_markup=ReplyKeyboardRemove(),
-        )
-        llm = context.bot_data["llm"]
         n_chunks = len(existing_ids)
-
-        # Closures so the RAG graph can read fresh user_data each call
-        def get_cached_chunks():
-            return load_retrieved_chunks(context.user_data)
-
-        def get_history():
-            return load_history(context.user_data)
-
-        def get_bm25():
-            return load_bm25_index(video_id)
-
-        context.user_data["agent"] = build_routed_rag_graph(
-            vs, llm,
-            prev_chunks_fn=get_cached_chunks,
-            history_fn=get_history,
-            bm25_index_fn=get_bm25,
-        )
+        context.user_data["agent"] = _build_agent(context, vs, video_id)
 
         await update.message.reply_text(
-            f"✅ Video ready! ({n_chunks} chunks)\n"
+            f"✅ Video already indexed – using existing data.\n"
+            f"📦 {n_chunks} chunks\n"
             f"🤖 Provider: {'AWS Bedrock' if PROVIDER == 'bedrock' else 'Ollama (local)'}\n"
             f"✂️ Chunking: {CHUNK_STRATEGY}  ({CHUNK_TOKENS} tok, {OVERLAP_TOKENS} overlap)\n"
             f"🔎 Retrieval: hybrid (vector + BM25) + cross-encoder rerank\n\n"
             f"💬 Ask me anything about the video.\n"
-            f"New video → /start  |  Exit → /cancel"
+            f"New video → /start  |  Exit → /cancel",
+            reply_markup=ReplyKeyboardRemove(),
         )
         return ASK_QUESTION
 
-    # ── Not indexed yet → download & index as before ────────────────────
+    # ── Not indexed yet → download & index ───────────────────────────────
     status_msg = await update.message.reply_text(
-        "⏳ Downloading transcript...",
+        "⏳ Downloading transcript (auto-detecting best available language)...",
         reply_markup=ReplyKeyboardRemove(),
     )
 
     try:
-        transcript_text, segments, status = get_transcript(video_id, lang)
+        transcript_text, segments, status, lang = get_transcript(video_id)
         total_tokens = count_tokens(transcript_text)
 
         await safe_update(
@@ -394,26 +382,12 @@ async def receive_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
             video_id, transcript_text, lang, llm, segments=segments
         )
 
-        # Closures so the RAG graph can read fresh user_data each call
-        def get_cached_chunks():
-            return load_retrieved_chunks(context.user_data)
-
-        def get_history():
-            return load_history(context.user_data)
-
-        def get_bm25():
-            return load_bm25_index(video_id)
-
-        context.user_data["agent"] = build_routed_rag_graph(
-            vectorstore, llm,
-            prev_chunks_fn=get_cached_chunks,
-            history_fn=get_history,
-            bm25_index_fn=get_bm25,
-        )
+        context.user_data["agent"] = _build_agent(context, vectorstore, video_id)
 
         await safe_update(
             status_msg,
             f"✅ Video indexed!\n"
+            f"🌐 Transcript language: {lang}\n"
             f"📦 {n_chunks} chunks (~{CHUNK_TOKENS} tokens, {OVERLAP_TOKENS}-token overlap)\n"
             f"🤖 Provider: {'AWS Bedrock' if PROVIDER == 'bedrock' else 'Ollama (local)'}\n"
             f"✂️ Chunking: {CHUNK_STRATEGY}  ({CHUNK_TOKENS} tok, {OVERLAP_TOKENS} overlap)\n"
@@ -430,9 +404,9 @@ async def receive_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
     except NoTranscriptFound:
         await safe_update(status_msg,
-            f"❌ No '{lang}' transcript found.\n"
+            "❌ No transcript is available for this video at all.\n"
             "Check the video page for available captions.\n"
-            "Try /start with a different language.")
+            "Try /start with a different video.")
         return ASK_URL
 
     except Exception as e:
@@ -460,7 +434,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🤖 *How I work:*\n\n"
         "1️⃣ /start — let's begin\n"
         "2️⃣ Send a YouTube video link\n"
-        "3️⃣ Choose the transcript language\n"
+        "3️⃣ I auto-detect the best transcript (preferring the original, "
+        "non auto-generated one, in whatever language is available)\n"
         "4️⃣ I split the transcript using the configured chunking strategy\n"
         "5️⃣ I store chunks in ChromaDB + a BM25 keyword index\n"
         "6️⃣ I answer your questions using hybrid retrieval + reranking (RAG)\n\n"
@@ -493,7 +468,6 @@ def main():
         entry_points=[CommandHandler("start", start)],
         states={
             ASK_URL:      [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_url)],
-            ASK_LANG:     [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_lang)],
             ASK_QUESTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_question)],
         },
         fallbacks=[
