@@ -4,13 +4,26 @@ Supports two providers via PROVIDER= in .env:
   - ollama   → local Ollama (dev / no cost)
   - bedrock  → AWS Bedrock (production / pay-per-token)
 
-Stack: LangGraph + ChromaDB + youtube-transcript-api
+Stack: LangGraph + ChromaDB + BM25 (hybrid search) + cross-encoder rerank
+       + youtube-transcript-api
+
+FIXED / CHANGED vs. original:
+  - Removed unused `List` import and the dead top-level SYSTEM_PROMPT
+    (the real one lives in rag_graph.py and is the one actually used).
+  - Collection name now also keys on CHUNK_STRATEGY, so re-indexing a video
+    with a different strategy doesn't silently mix incompatible chunks into
+    one Chroma collection.
+  - Builds and persists a BM25 index alongside the Chroma vectorstore at
+    indexing time (hybrid_search.BM25Index), used by rag_graph for hybrid
+    retrieval.
+  - Passes a history_fn and bm25_index_fn into build_routed_rag_graph so the
+    RAG graph can do conversation-aware routing + hybrid search.
 """
 
 import os
 import re
 import logging
-from typing import TypedDict, Optional, List
+from typing import TypedDict, Optional
 from dotenv import load_dotenv
 
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
@@ -19,26 +32,28 @@ from telegram.ext import (
     ConversationHandler, filters, ContextTypes
 )
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.embeddings import Embeddings
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
-from langgraph.graph import StateGraph, START, END
 
-import tiktoken
 from youtube_transcript_api import (
     YouTubeTranscriptApi,
     TranscriptsDisabled,
     NoTranscriptFound,
 )
 
-# Import chunking utilities
+# Chunking utilities
 from chunking import (
     ChunkingConfig, Segment, build_documents,
-    segments_from_fetched, format_timestamp, youtube_deep_link,
-    _count_tokens,                  # moved from bot.py
+    segments_from_fetched, count_tokens,
 )
+
+# Router, hybrid search, and routed graph
+from router import load_retrieved_chunks, load_history
+from hybrid_search import BM25Index
+from rag_graph import build_routed_rag_graph, receive_question
 
 load_dotenv()
 
@@ -53,6 +68,7 @@ logger = logging.getLogger(__name__)
 PROVIDER       = os.getenv("PROVIDER", "ollama").lower()  # "ollama" | "bedrock"
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHROMA_DIR     = os.getenv("CHROMA_DIR", "./chroma_db")
+BM25_DIR       = os.getenv("BM25_DIR", "./bm25_cache")
 SIMILARITY_K   = int(os.getenv("SIMILARITY_K", 4))
 
 # Ollama settings (used when PROVIDER=ollama)
@@ -61,12 +77,11 @@ OLLAMA_EMBED    = os.getenv("OLLAMA_EMBED",    "nomic-embed-text")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 
 # Bedrock settings (used when PROVIDER=bedrock)
-AWS_REGION        = os.getenv("AWS_REGION",        "us-east-1")
-BEDROCK_LLM_MODEL = os.getenv("BEDROCK_LLM_MODEL", "amazon.nova-lite-v1:0")
-BEDROCK_EMBED_MODEL = os.getenv("BEDROCK_EMBED_MODEL",
-                                "cohere.embed-multilingual-v3")
+AWS_REGION          = os.getenv("AWS_REGION",        "us-east-1")
+BEDROCK_LLM_MODEL    = os.getenv("BEDROCK_LLM_MODEL", "amazon.nova-lite-v1:0")
+BEDROCK_EMBED_MODEL  = os.getenv("BEDROCK_EMBED_MODEL", "cohere.embed-multilingual-v3")
 
-# Chunking (now configurable via .env)
+# Chunking (configurable via .env)
 CHUNK_STRATEGY   = os.getenv("CHUNK_STRATEGY", "timestamp")   # sentence | timestamp | semantic
 CHUNK_TOKENS     = int(os.getenv("CHUNK_TOKENS",    300))
 OVERLAP_TOKENS   = int(os.getenv("OVERLAP_TOKENS",   30))
@@ -84,12 +99,6 @@ SUPPORTED_LANGS = {
     "es": "🇪🇸 Spanish",
     "ru": "🇷🇺 Russian",
 }
-
-SYSTEM_PROMPT = """You are an AI assistant that analyzes YouTube videos.
-Use the provided video transcript context to answer accurately.
-If the answer is not contained in the context, honestly say so.
-When citing specific parts, refer to them by their timestamp labels (e.g., [Timestamp: 01:23]) if available, otherwise by chunk number.
-Reference specific moments from the video when possible."""
 
 
 # ── Provider factory ────────────────────────────────────────────────────────────
@@ -165,13 +174,22 @@ def get_transcript(video_id: str, lang: str) -> tuple[str, list[Segment], str]:
 
 
 # ── Vector store ───────────────────────────────────────────────────────────────
+def collection_name(video_id: str) -> str:
+    # Keyed on provider AND chunk strategy so mismatched re-indexing can't
+    # silently mix incompatible chunk shapes/metadata in one collection.
+    return f"video_{video_id}_{PROVIDER}_{CHUNK_STRATEGY}"
+
+
 def init_vectorstore(video_id: str) -> Chroma:
-    embed_tag = PROVIDER # "ollama" or "bedrock"
     return Chroma(
-        collection_name=f"video_{video_id}_{embed_tag}",
+        collection_name=collection_name(video_id),
         embedding_function=build_embeddings(),
         persist_directory=CHROMA_DIR,
     )
+
+
+def bm25_cache_path(video_id: str) -> str:
+    return os.path.join(BM25_DIR, f"{collection_name(video_id)}.pkl")
 
 
 SUMMARY_PROMPT = """You are given a YouTube video transcript.
@@ -179,6 +197,7 @@ Write a concise summary (5-7 sentences) covering:
 - The main topic and purpose of the video
 - Key points or arguments made
 - Any notable conclusions
+- Provide answer in the same language as the transcript.
 
 Transcript (may be truncated):
 {transcript}"""
@@ -186,8 +205,14 @@ Transcript (may be truncated):
 
 def generate_summary(text: str, llm: BaseChatModel) -> str:
     """Generates a short summary of the full transcript using the LLM."""
-    # Use first ~3000 tokens worth of characters to stay within context limits
-    preview = text[:3000]
+    # Truncate by tokens (not raw characters) to stay within context limits.
+    enc_tokens = count_tokens(text)
+    if enc_tokens > 3000:
+        # crude proportional character truncation based on measured token count
+        ratio = 3000 / enc_tokens
+        preview = text[: int(len(text) * ratio)]
+    else:
+        preview = text
     try:
         response = llm.invoke([
             HumanMessage(content=SUMMARY_PROMPT.format(transcript=preview))
@@ -206,96 +231,66 @@ def index_transcript(
     segments: list[Segment] | None = None,
 ) -> tuple[Chroma, int]:
     """
-    Chunks the transcript using the selected strategy and upserts into ChromaDB.
-    Also generates and stores a full‑video summary as a special document.
+    Chunks the transcript using the selected strategy, upserts into ChromaDB,
+    and builds/persists a BM25 keyword index for hybrid search.
+    Also generates and stores a full-video summary as a special document.
     """
-    cfg = ChunkingConfig(
-        strategy=CHUNK_STRATEGY,
-        chunk_tokens=CHUNK_TOKENS,
-        overlap_tokens=OVERLAP_TOKENS,
-        similarity_threshold=SIMILARITY_THR,
-    )
-
-    embeddings = build_embeddings()   # reuse existing factory
-
-    chunk_docs = build_documents(
-        video_id=video_id,
-        lang=lang,
-        text=text,
-        segments=segments,           # None is safe; timestamp falls back to sentence
-        embeddings=embeddings if CHUNK_STRATEGY == "semantic" else None,
-        config=cfg,
-    )
-
-    # Summary doc (unchanged logic)
-    summary = generate_summary(text, llm)
-    if summary:
-        chunk_docs.append(Document(
-            page_content=summary,
-            metadata={"video_id": video_id, "lang": lang,
-                      "chunk_idx": -1, "type": "summary"},
-        ))
-
     vs = init_vectorstore(video_id)
     existing = vs.get()
     if existing["ids"]:
-        vs.delete(existing["ids"])
-    vs.add_documents(chunk_docs)
-    logger.info(f"📦 Stored {len(chunk_docs)} docs for {video_id} [{CHUNK_STRATEGY}]")
-    return vs, len(chunk_docs)
+        logger.info(
+            f"♻️ Vectorstore already exists for {video_id} "
+            f"– using existing ({len(existing['ids'])} docs)"
+        )
+        n_docs = len(existing["ids"])
+    else:
+        cfg = ChunkingConfig(
+            strategy=CHUNK_STRATEGY,
+            chunk_tokens=CHUNK_TOKENS,
+            overlap_tokens=OVERLAP_TOKENS,
+            similarity_threshold=SIMILARITY_THR,
+        )
+
+        embeddings = build_embeddings()
+
+        chunk_docs = build_documents(
+            video_id=video_id,
+            lang=lang,
+            text=text,
+            segments=segments,           # None is safe; timestamp falls back to sentence
+            embeddings=embeddings if CHUNK_STRATEGY == "semantic" else None,
+            config=cfg,
+        )
+
+        summary = generate_summary(text, llm)
+        if summary:
+            chunk_docs.append(Document(
+                page_content=summary,
+                metadata={"video_id": video_id, "lang": lang,
+                          "chunk_idx": -1, "type": "summary"},
+            ))
+
+        vs.add_documents(chunk_docs)
+        n_docs = len(chunk_docs)
+        logger.info(f"📦 Stored {n_docs} docs for {video_id} [{CHUNK_STRATEGY}]")
+
+        # Build + persist BM25 index for hybrid search over the SAME chunk set
+        try:
+            bm25 = BM25Index.build(chunk_docs)
+            bm25.save(bm25_cache_path(video_id))
+            logger.info(f"🔎 BM25 index built and cached for {video_id}")
+        except Exception as e:
+            logger.warning(f"⚠️ BM25 index build failed ({e}); hybrid search will fall back to vector-only")
+
+    return vs, n_docs
 
 
-# ── LangGraph ──────────────────────────────────────────────────────────────────
-class RAGState(TypedDict):
-    question:       str
-    context:        str
-    answer:         str
-    video_id:       str
-    retrieved_docs: list   # new — populated by retrieve node
-
-
-def make_retrieve_node(vectorstore: Chroma):
-    def retrieve(state: RAGState) -> RAGState:
-        logger.info(f"🔍 Retrieving context for: {state['question']}")
-        docs = vectorstore.similarity_search(state["question"], k=SIMILARITY_K)
-        # Build context with appropriate labels (timestamp if available)
-        context_parts = []
-        for d in docs:
-            if "timestamp_label" in d.metadata:
-                label = f"[Timestamp: {d.metadata['timestamp_label']}]"
-            else:
-                label = f"[Chunk {d.metadata.get('chunk_idx', '?')}]"
-            context_parts.append(f"{label}\n{d.page_content}")
-        context = "\n\n---\n\n".join(context_parts)
-        return {**state, "context": context, "retrieved_docs": docs}
-    return retrieve
-
-
-def make_generate_node(llm: BaseChatModel):
-    def generate(state: RAGState) -> RAGState:
-        logger.info("✍️ Generating answer...")
-        messages = [
-            SystemMessage(content=SYSTEM_PROMPT),
-            HumanMessage(content=(
-                f"Video transcript context:\n{state['context']}\n\n"
-                f"Question: {state['question']}\n\n"
-                "Provide a detailed answer based on the context above. "
-                "Answer in the same language the question is written in."
-            )),
-        ]
-        response = llm.invoke(messages)
-        return {**state, "answer": response.content}
-    return generate
-
-
-def build_rag_graph(vectorstore: Chroma, llm: BaseChatModel):
-    graph = StateGraph(RAGState)
-    graph.add_node("retrieve", make_retrieve_node(vectorstore))
-    graph.add_node("generate", make_generate_node(llm))
-    graph.add_edge(START, "retrieve")
-    graph.add_edge("retrieve", "generate")
-    graph.add_edge("generate", END)
-    return graph.compile()
+def load_bm25_index(video_id: str) -> Optional[BM25Index]:
+    try:
+        return BM25Index.load(bm25_cache_path(video_id))
+    except Exception as e:
+        logger.warning(f"⚠️ Could not load BM25 index for {video_id}: {e}")
+        return None
 
 
 # ── Telegram helpers ───────────────────────────────────────────────────────────
@@ -307,23 +302,9 @@ async def safe_update(msg, text: str, **kwargs):
         await msg.reply_text(text, **kwargs)
 
 
-# ── Timestamp citation helper ──────────────────────────────────────────────────
-def _append_timestamp_citations(answer: str, docs: list) -> str:
-    """Appends '📍 Mentioned at: X:XX, Y:YY' if chunks carry timestamps."""
-    links = []
-    for d in docs:
-        if d.metadata.get("strategy") == "timestamp" and "deep_link" in d.metadata:
-            label = d.metadata["timestamp_label"]
-            link  = d.metadata["deep_link"]
-            links.append(f"[{label}]({link})")
-    if links:
-        unique = list(dict.fromkeys(links))   # deduplicate, preserve order
-        return answer + "\n\n📍 *Mentioned at:* " + "  ·  ".join(unique[:4])
-    return answer
-
-
 # ── Conversation handlers ──────────────────────────────────────────────────────
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data.clear()
     await update.message.reply_text(
         "👋 Hi! I analyze YouTube videos using their transcripts.\n\n"
         "📎 Send me a YouTube video link:",
@@ -368,7 +349,7 @@ async def receive_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
     try:
         transcript_text, segments, status = get_transcript(video_id, lang)
-        total_tokens = _count_tokens(transcript_text)
+        total_tokens = count_tokens(transcript_text)
 
         await safe_update(
             status_msg,
@@ -379,14 +360,31 @@ async def receive_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         vectorstore, n_chunks = index_transcript(
             video_id, transcript_text, lang, llm, segments=segments
         )
-        context.user_data["agent"] = build_rag_graph(vectorstore, llm)
+
+        # Closures so the RAG graph can read fresh user_data each call
+        def get_cached_chunks():
+            return load_retrieved_chunks(context.user_data)
+
+        def get_history():
+            return load_history(context.user_data)
+
+        def get_bm25():
+            return load_bm25_index(video_id)
+
+        context.user_data["agent"] = build_routed_rag_graph(
+            vectorstore, llm,
+            prev_chunks_fn=get_cached_chunks,
+            history_fn=get_history,
+            bm25_index_fn=get_bm25,
+        )
 
         await safe_update(
             status_msg,
             f"✅ Video indexed!\n"
             f"📦 {n_chunks} chunks (~{CHUNK_TOKENS} tokens, {OVERLAP_TOKENS}-token overlap)\n"
             f"🤖 Provider: {'AWS Bedrock' if PROVIDER == 'bedrock' else 'Ollama (local)'}\n"
-            f"✂️ Chunking: {CHUNK_STRATEGY}  ({CHUNK_TOKENS} tok, {OVERLAP_TOKENS} overlap)\n\n"
+            f"✂️ Chunking: {CHUNK_STRATEGY}  ({CHUNK_TOKENS} tok, {OVERLAP_TOKENS} overlap)\n"
+            f"🔎 Retrieval: hybrid (vector + BM25) + cross-encoder rerank\n\n"
             f"💬 Ask me anything about the video.\n"
             f"New video → /start  |  Exit → /cancel"
         )
@@ -410,39 +408,6 @@ async def receive_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         return ASK_URL
 
 
-async def receive_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    agent = context.user_data.get("agent")
-    if not agent:
-        await update.message.reply_text("❌ Load a video first — /start")
-        return ConversationHandler.END
-
-    thinking = await update.message.reply_text("🤔 Searching the transcript...")
-    try:
-        result = agent.invoke({
-            "question": update.message.text.strip(),
-            "context":  "",
-            "answer":   "",
-            "video_id": context.user_data.get("video_id", ""),
-        })
-        final_answer = result["answer"]
-        # Append timestamp citations if using timestamp strategy
-        if CHUNK_STRATEGY == "timestamp":
-            retrieved_docs = result.get("retrieved_docs", [])
-            final_answer = _append_timestamp_citations(final_answer, retrieved_docs)
-        await safe_update(thinking, final_answer, parse_mode="Markdown")
-    except Exception as e:
-        logger.error(f"Agent error: {e}")
-        provider_hint = (
-            "Make sure Ollama is running:\n`ollama serve`"
-            if PROVIDER == "ollama"
-            else "Check your AWS credentials and region in .env"
-        )
-        await safe_update(thinking, f"⚠️ Generation error.\n{provider_hint}",
-                          parse_mode="Markdown")
-
-    return ASK_QUESTION
-
-
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
     await update.message.reply_text(
@@ -464,8 +429,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "2️⃣ Send a YouTube video link\n"
         "3️⃣ Choose the transcript language\n"
         "4️⃣ I split the transcript using the configured chunking strategy\n"
-        "5️⃣ I store them in a ChromaDB vector database\n"
-        "6️⃣ I answer your questions using RAG\n\n"
+        "5️⃣ I store chunks in ChromaDB + a BM25 keyword index\n"
+        "6️⃣ I answer your questions using hybrid retrieval + reranking (RAG)\n\n"
         f"{provider_line}\n\n"
         "📌 *Commands:*\n"
         "/start — new video\n"
@@ -481,6 +446,8 @@ def main():
         raise ValueError("❌ TELEGRAM_TOKEN not found in .env")
     if PROVIDER not in ("ollama", "bedrock"):
         raise ValueError(f"❌ Unknown PROVIDER='{PROVIDER}'. Use 'ollama' or 'bedrock'.")
+
+    os.makedirs(BM25_DIR, exist_ok=True)
 
     logger.info(f"🚀 Starting bot. Provider: {PROVIDER.upper()}")
 

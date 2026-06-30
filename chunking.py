@@ -8,6 +8,16 @@ Three strategies (set CHUNK_STRATEGY in .env):
 
 All strategies return List[Document] and are drop-in replacements for the old
 split_into_chunks() + index_transcript() pair.
+
+FIXED vs. original:
+  - `build_documents`'s default argument was
+        config: ChunkingConfig = field(default_factory=ChunkingConfig)
+    `field()` is a dataclass-field descriptor, not a value — using it as a
+    plain function default doesn't construct a ChunkingConfig; it leaves the
+    parameter bound to a Field object, which would blow up the moment any
+    code tried to read e.g. `config.strategy` without explicitly passing
+    `config=`. Fixed to `config: Optional[ChunkingConfig] = None` with a
+    `config = config or ChunkingConfig()` inside the function body.
 """
 
 from __future__ import annotations
@@ -33,7 +43,7 @@ def _get_encoder():
         return None
 
 
-def _count_tokens(text: str) -> int:
+def count_tokens(text: str) -> int:
     enc = _get_encoder()
     return len(enc.encode(text)) if enc else len(text) // 4
 
@@ -75,8 +85,7 @@ _SENTENCE_END = re.compile(r'(?<=[.!?])\s+')
 
 
 def _split_into_sentences(text: str) -> list[str]:
-    """Naіve but fast sentence splitter (handles Mr./Dr. reasonably well)."""
-    # Protect common abbreviations
+    """Naive but fast sentence splitter (handles Mr./Dr. reasonably well)."""
     protected = re.sub(r'\b(Mr|Mrs|Ms|Dr|Prof|Sr|Jr|vs|etc|approx|avg)\.\s',
                        r'\1<DOT> ', text)
     parts = _SENTENCE_END.split(protected)
@@ -91,12 +100,8 @@ def sentence_aware_chunks(
     overlap_sentences: int = 1,
 ) -> list[Document]:
     """
-    Groups whole sentences into windows of ≤ chunk_tokens tokens.
+    Groups whole sentences into windows of <= chunk_tokens tokens.
     Adjacent chunks share `overlap_sentences` sentences for context continuity.
-
-    Why it's better than fixed-token splitting:
-    - Never cuts mid-sentence → cleaner semantic units → better retrieval precision.
-    - Overlap by sentence count (not token count) → readable overlapping context.
     """
     sentences = _split_into_sentences(text)
     chunks: list[Document] = []
@@ -108,7 +113,7 @@ def sentence_aware_chunks(
         token_count = 0
 
         for j in range(i, len(sentences)):
-            s_tokens = _count_tokens(sentences[j])
+            s_tokens = count_tokens(sentences[j])
             if token_count + s_tokens > chunk_tokens and window:
                 break
             window.append(sentences[j])
@@ -126,7 +131,6 @@ def sentence_aware_chunks(
             },
         ))
 
-        # Advance by window size minus overlap
         advance = max(1, len(window) - overlap_sentences)
         i += advance
         chunk_idx += 1
@@ -146,33 +150,23 @@ def timestamp_aware_chunks(
 ) -> list[Document]:
     """
     Groups raw transcript segments into chunks while preserving start_time.
-    Each Document's metadata contains:
-      - start_time (seconds)   → for "discussed at X:XX" replies
-      - timestamp_label        → human-readable "3:45"
-      - deep_link              → clickable https://youtu.be/…?t=225
-
-    Why it's better than fixed-token splitting:
-    - Answers can cite exact video positions ("this is covered at 12:34").
-    - Overlap is done by re-including the last N tokens of the previous chunk,
-      so context bleeds naturally across segment boundaries.
     """
     chunks: list[Document] = []
     i = 0
-    prev_tail = ""           # tail of previous chunk used for overlap
+    prev_tail = ""
     chunk_idx = 0
 
     while i < len(segments):
         window_segs: list[Segment] = []
-        token_count = _count_tokens(prev_tail)
+        token_count = count_tokens(prev_tail)
 
         for j in range(i, len(segments)):
-            s_tokens = _count_tokens(segments[j].text)
+            s_tokens = count_tokens(segments[j].text)
             if token_count + s_tokens > chunk_tokens and window_segs:
                 break
             window_segs.append(segments[j])
             token_count += s_tokens
 
-        # Build text: overlap prefix + current window
         chunk_text = (prev_tail + " " + " ".join(s.text for s in window_segs)).strip()
         start_sec   = window_segs[0].start
         end_sec     = window_segs[-1].end
@@ -192,7 +186,6 @@ def timestamp_aware_chunks(
             },
         ))
 
-        # Compute overlap tail from this window (last overlap_tokens worth)
         full_text = " ".join(s.text for s in window_segs)
         enc = _get_encoder()
         if enc:
@@ -229,15 +222,6 @@ def semantic_chunks(
     """
     Embeds every sentence, computes pairwise cosine similarity between adjacent
     sentences, and splits at topic-shift valleys (similarity < threshold).
-    Merges tiny splits to stay near chunk_tokens.
-
-    Why it's better:
-    - Topic-coherent chunks → retrieval returns semantically focused passages.
-    - Avoids splitting a paragraph mid-argument even when it's long.
-
-    Trade-offs:
-    - Requires one embed call per sentence (slow / costs tokens on remote APIs).
-    - For very long videos, consider running on GPU or falling back to 'sentence'.
     """
     sentences = _split_into_sentences(text)
     if not sentences:
@@ -246,13 +230,11 @@ def semantic_chunks(
     logger.info(f"[semantic] Embedding {len(sentences)} sentences — may take a moment…")
     sentence_embeddings = embeddings.embed_documents(sentences)
 
-    # Compute similarity between consecutive sentence pairs
     similarities = [
         _cosine_similarity(sentence_embeddings[k], sentence_embeddings[k + 1])
         for k in range(len(sentences) - 1)
     ]
 
-    # Find split points: similarity valleys below threshold
     split_indices: set[int] = {0}
     for k, sim in enumerate(similarities):
         if sim < similarity_threshold:
@@ -260,18 +242,16 @@ def semantic_chunks(
     split_indices.add(len(sentences))
     splits = sorted(split_indices)
 
-    # Group consecutive split windows; merge if too small
     raw_groups: list[list[str]] = []
     for a, b in zip(splits, splits[1:]):
         raw_groups.append(sentences[a:b])
 
-    # Merge small groups and enforce token ceiling
     merged_groups: list[list[str]] = []
     current: list[str] = []
     current_tokens = 0
 
     for group in raw_groups:
-        group_tokens = sum(_count_tokens(s) for s in group)
+        group_tokens = sum(count_tokens(s) for s in group)
 
         if (current and
                 len(current) >= min_sentences_per_chunk and
@@ -320,38 +300,15 @@ def build_documents(
     *,
     video_id: str,
     lang: str,
-    text: str,                             # full plain text (always required)
-    segments: Optional[list[Segment]] = None,  # required for timestamp strategy
-    embeddings: Optional[Embeddings] = None,   # required for semantic strategy
-    config: ChunkingConfig = field(default_factory=ChunkingConfig),
+    text: str,                                  # full plain text (always required)
+    segments: Optional[list[Segment]] = None,   # required for timestamp strategy
+    embeddings: Optional[Embeddings] = None,    # required for semantic strategy
+    config: Optional[ChunkingConfig] = None,
 ) -> list[Document]:
     """
     Unified entry point. Returns a list of LangChain Documents ready for ChromaDB.
-
-    Usage
-    -----
-    # Timestamp strategy (recommended default)
-    docs = build_documents(
-        video_id=video_id, lang=lang, text=full_text,
-        segments=segments, config=ChunkingConfig(strategy="timestamp"),
-    )
-
-    # Sentence strategy
-    docs = build_documents(
-        video_id=video_id, lang=lang, text=full_text,
-        config=ChunkingConfig(strategy="sentence"),
-    )
-
-    # Semantic strategy
-    docs = build_documents(
-        video_id=video_id, lang=lang, text=full_text,
-        embeddings=embed_model,
-        config=ChunkingConfig(strategy="semantic"),
-    )
     """
-    if config is None:
-        config = ChunkingConfig()
-
+    config = config or ChunkingConfig()
     strategy = config.strategy.lower()
 
     if strategy == "sentence":
