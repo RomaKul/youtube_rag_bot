@@ -235,52 +235,44 @@ def index_transcript(
     and builds/persists a BM25 keyword index for hybrid search.
     Also generates and stores a full-video summary as a special document.
     """
+    cfg = ChunkingConfig(
+        strategy=CHUNK_STRATEGY,
+        chunk_tokens=CHUNK_TOKENS,
+        overlap_tokens=OVERLAP_TOKENS,
+        similarity_threshold=SIMILARITY_THR,
+    )
+
+    embeddings = build_embeddings()
+
+    chunk_docs = build_documents(
+        video_id=video_id,
+        lang=lang,
+        text=text,
+        segments=segments,           # None is safe; timestamp falls back to sentence
+        embeddings=embeddings if CHUNK_STRATEGY == "semantic" else None,
+        config=cfg,
+    )
+
+    summary = generate_summary(text, llm)
+    if summary:
+        chunk_docs.append(Document(
+            page_content=summary,
+            metadata={"video_id": video_id, "lang": lang,
+                        "chunk_idx": -1, "type": "summary"},
+        ))
+        
     vs = init_vectorstore(video_id)
-    existing = vs.get()
-    if existing["ids"]:
-        logger.info(
-            f"♻️ Vectorstore already exists for {video_id} "
-            f"– using existing ({len(existing['ids'])} docs)"
-        )
-        n_docs = len(existing["ids"])
-    else:
-        cfg = ChunkingConfig(
-            strategy=CHUNK_STRATEGY,
-            chunk_tokens=CHUNK_TOKENS,
-            overlap_tokens=OVERLAP_TOKENS,
-            similarity_threshold=SIMILARITY_THR,
-        )
+    vs.add_documents(chunk_docs)
+    n_docs = len(chunk_docs)
+    logger.info(f"📦 Stored {n_docs} docs for {video_id} [{CHUNK_STRATEGY}]")
 
-        embeddings = build_embeddings()
-
-        chunk_docs = build_documents(
-            video_id=video_id,
-            lang=lang,
-            text=text,
-            segments=segments,           # None is safe; timestamp falls back to sentence
-            embeddings=embeddings if CHUNK_STRATEGY == "semantic" else None,
-            config=cfg,
-        )
-
-        summary = generate_summary(text, llm)
-        if summary:
-            chunk_docs.append(Document(
-                page_content=summary,
-                metadata={"video_id": video_id, "lang": lang,
-                          "chunk_idx": -1, "type": "summary"},
-            ))
-
-        vs.add_documents(chunk_docs)
-        n_docs = len(chunk_docs)
-        logger.info(f"📦 Stored {n_docs} docs for {video_id} [{CHUNK_STRATEGY}]")
-
-        # Build + persist BM25 index for hybrid search over the SAME chunk set
-        try:
-            bm25 = BM25Index.build(chunk_docs)
-            bm25.save(bm25_cache_path(video_id))
-            logger.info(f"🔎 BM25 index built and cached for {video_id}")
-        except Exception as e:
-            logger.warning(f"⚠️ BM25 index build failed ({e}); hybrid search will fall back to vector-only")
+    # Build + persist BM25 index for hybrid search over the SAME chunk set
+    try:
+        bm25 = BM25Index.build(chunk_docs)
+        bm25.save(bm25_cache_path(video_id))
+        logger.info(f"🔎 BM25 index built and cached for {video_id}")
+    except Exception as e:
+        logger.warning(f"⚠️ BM25 index build failed ({e}); hybrid search will fall back to vector-only")
 
     return vs, n_docs
 
@@ -342,6 +334,47 @@ async def receive_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         return ASK_LANG
 
     context.user_data["lang"] = lang
+
+    # ── Check if this video is already indexed ──────────────────────────
+    vs = init_vectorstore(video_id)
+    existing_ids = vs.get().get("ids", [])
+    if existing_ids:
+        # Already have chunks → skip transcript download entirely
+        await update.message.reply_text(
+            "✅ Video already indexed – using existing data.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        llm = context.bot_data["llm"]
+        n_chunks = len(existing_ids)
+
+        # Closures so the RAG graph can read fresh user_data each call
+        def get_cached_chunks():
+            return load_retrieved_chunks(context.user_data)
+
+        def get_history():
+            return load_history(context.user_data)
+
+        def get_bm25():
+            return load_bm25_index(video_id)
+
+        context.user_data["agent"] = build_routed_rag_graph(
+            vs, llm,
+            prev_chunks_fn=get_cached_chunks,
+            history_fn=get_history,
+            bm25_index_fn=get_bm25,
+        )
+
+        await update.message.reply_text(
+            f"✅ Video ready! ({n_chunks} chunks)\n"
+            f"🤖 Provider: {'AWS Bedrock' if PROVIDER == 'bedrock' else 'Ollama (local)'}\n"
+            f"✂️ Chunking: {CHUNK_STRATEGY}  ({CHUNK_TOKENS} tok, {OVERLAP_TOKENS} overlap)\n"
+            f"🔎 Retrieval: hybrid (vector + BM25) + cross-encoder rerank\n\n"
+            f"💬 Ask me anything about the video.\n"
+            f"New video → /start  |  Exit → /cancel"
+        )
+        return ASK_QUESTION
+
+    # ── Not indexed yet → download & index as before ────────────────────
     status_msg = await update.message.reply_text(
         "⏳ Downloading transcript...",
         reply_markup=ReplyKeyboardRemove(),
