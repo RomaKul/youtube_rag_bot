@@ -7,8 +7,6 @@ three routes BEFORE the expensive vector-DB search is considered:
   Route.FROM_CONTEXT  — answerable from the chunks already shown to the user
                         (last retrieval stored in user_data); skip DB search.
   Route.FROM_DB       — question is about the video but needs a fresh DB search.
-  Route.OFF_TOPIC     — question has nothing to do with the video; answer from
-                        general LLM knowledge with a disclaimer note.
 
 Design decisions (per spec):
   - Only the *last* retrieval's chunks are kept as "memory" (in user_data).
@@ -62,22 +60,17 @@ Categories:
   "from_db"      — The question is about the video but the [PREVIOUS CONTEXT]
                    does not contain enough information to answer it. A fresh
                    search of the video transcript database is needed.
-  "off_topic"    — The question has NOTHING to do with the video or its topic.
 
 Use [RECENT CHAT HISTORY] to resolve follow-up questions ("tell me more about
 that", "what else did he say?", "why?") — these refer to the previous turn's
 topic, NOT a brand-new unrelated subject. A short follow-up referring back to
 something already discussed should usually be "from_context" (if the previous
-context still covers it) or "from_db" (if it needs more detail) — almost never
-"off_topic".
+context still covers it) or "from_db" (if it needs more detail).
 
 JSON format (respond with ONLY this):
-{"route": "<from_context|from_db|off_topic>", "reason": "<one short sentence>"}"""
+{"route": "<from_context|from_db>", "reason": "<one short sentence>"}"""
 
 _ROUTER_USER = """\
-[VIDEO TOPIC HINT]
-{topic_hint}
-
 [RECENT CHAT HISTORY]
 {history}
 
@@ -104,7 +97,6 @@ def classify_question(
     question: str,
     prev_chunks: list[Document],
     llm: BaseChatModel,
-    video_summary: str = "",
     history: Optional[list[tuple[str, str]]] = None,
 ) -> tuple[Route, str]:
     """
@@ -125,7 +117,6 @@ def classify_question(
     messages = [
         SystemMessage(content=_ROUTER_SYSTEM),
         HumanMessage(content=_ROUTER_USER.format(
-            topic_hint=video_summary or "(none)",
             history=_format_history(history or []),
             prev_context="\n---\n".join(d.page_content for d in prev_chunks) or "(none)",
             question=question,
@@ -186,10 +177,3 @@ def load_history(user_data: dict) -> list[tuple[str, str]]:
 def clear_history(user_data: dict) -> None:
     user_data.pop(HISTORY_KEY, None)
 
-
-# ── Off-topic disclaimer ───────────────────────────────────────────────────────
-
-OFF_TOPIC_NOTE = (
-    "\n\n_ℹ️ This question isn't related to the loaded video — "
-    "answered from general knowledge._"
-)

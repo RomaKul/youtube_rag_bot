@@ -59,7 +59,6 @@ from router import (
     Route, classify_question,
     save_retrieved_chunks, load_retrieved_chunks,
     save_turn, load_history,
-    OFF_TOPIC_NOTE,
 )
 from hybrid_search import BM25Index, hybrid_search
 from reranker import rerank
@@ -97,13 +96,7 @@ def fetch_video_summary(vectorstore: Chroma) -> str:
 SYSTEM_PROMPT = """You are an AI assistant that analyzes YouTube videos.
 Use the provided video transcript context to answer accurately.
 If the answer is not contained in the context, honestly say so.
-Each context passage is labeled [chunk N]. When you use information from a
-passage, cite it inline like [chunk N] right after the relevant sentence.
 Reference specific moments from the video when possible."""
-
-GENERAL_SYSTEM_PROMPT = """You are a helpful AI assistant.
-Answer the user's question from your general knowledge.
-Be concise and accurate."""
 
 _QUERY_REWRITE_SYSTEM = """You rewrite casual user questions into focused search
 queries for finding relevant passages in a video transcript.
@@ -127,22 +120,18 @@ class RAGState(TypedDict):
 
 # ── Node factories ─────────────────────────────────────────────────────────────
 
-def make_classify_node(llm: BaseChatModel, prev_chunks_fn, history_fn, video_summary: str = ""):
+def make_classify_node(llm: BaseChatModel, prev_chunks_fn, history_fn):
     """
     prev_chunks_fn: callable() → list[Document]
     history_fn:     callable() → list[tuple[str, str]]
     Injected so the node can read user_data without importing Telegram types.
 
-    video_summary: fetched once at graph-build time from ChromaDB and baked
-    into the closure so every classify call has the full topic hint with zero
-    extra DB or LLM calls.
     """
     def classify(state: RAGState) -> RAGState:
         prev_chunks = prev_chunks_fn()
         history = history_fn()
         route, reason = classify_question(
-            state["question"], prev_chunks, llm,
-            video_summary=video_summary, history=history,
+            state["question"], prev_chunks, llm, history=history,
         )
 
         if route == Route.FROM_CONTEXT and prev_chunks:
@@ -210,7 +199,6 @@ def make_generate_node(llm: BaseChatModel):
                 f"Video transcript context:\n{state['context']}\n\n"
                 f"Question: {state['question']}\n\n"
                 "Provide a detailed answer based on the context above. "
-                "Cite passages inline as [chunk N]."
             )),
         ]
         try:
@@ -223,25 +211,6 @@ def make_generate_node(llm: BaseChatModel):
     return generate
 
 
-def make_general_knowledge_node(llm: BaseChatModel):
-    """Used for off-topic questions — no video context injected."""
-    def general_knowledge(state: RAGState) -> RAGState:
-        logger.info("[general_knowledge] answering off-topic question")
-        messages = [
-            SystemMessage(content=GENERAL_SYSTEM_PROMPT),
-            HumanMessage(content=state["question"]),
-        ]
-        try:
-            response = llm.invoke(messages)
-            answer = response.content
-        except Exception as e:
-            logger.error(f"[general_knowledge] LLM call failed: {e}")
-            answer = "⚠️ Sorry, I had trouble generating an answer just now. Please try again."
-        # Append disclaimer so user knows this wasn't from the video
-        return {**state, "answer": answer + OFF_TOPIC_NOTE}
-    return general_knowledge
-
-
 # ── Routing edge ───────────────────────────────────────────────────────────────
 
 def route_after_classify(state: RAGState) -> str:
@@ -249,8 +218,6 @@ def route_after_classify(state: RAGState) -> str:
     r = state.get("route", Route.FROM_DB.value)
     if r == Route.FROM_CONTEXT.value:
         return "generate"           # skip DB; context already filled in
-    if r == Route.OFF_TOPIC.value:
-        return "general_knowledge"  # skip all video context
     return "rewrite_query"          # FROM_DB default
 
 
@@ -263,9 +230,6 @@ def build_routed_rag_graph(
     history_fn=None,         # callable() → list[tuple[str, str]]
     bm25_index_fn=None,      # callable() → Optional[BM25Index]
 ) -> object:                 # compiled LangGraph
-    # Fetch the summary once at graph-build time — stored in the classify
-    # node closure for the lifetime of this session.
-    video_summary = fetch_video_summary(vectorstore)
 
     if history_fn is None:
         history_fn = lambda: []
@@ -274,11 +238,10 @@ def build_routed_rag_graph(
 
     graph = StateGraph(RAGState)
 
-    graph.add_node("classify",          make_classify_node(llm, prev_chunks_fn, history_fn, video_summary))
+    graph.add_node("classify",          make_classify_node(llm, prev_chunks_fn, history_fn))
     graph.add_node("rewrite_query",     make_query_rewrite_node(llm))
     graph.add_node("retrieve",          make_retrieve_node(vectorstore, bm25_index_fn))
     graph.add_node("generate",          make_generate_node(llm))
-    graph.add_node("general_knowledge", make_general_knowledge_node(llm))
 
     graph.add_edge(START, "classify")
 
@@ -288,14 +251,12 @@ def build_routed_rag_graph(
         {
             "generate":          "generate",
             "rewrite_query":     "rewrite_query",
-            "general_knowledge": "general_knowledge",
         },
     )
 
     graph.add_edge("rewrite_query",     "retrieve")
     graph.add_edge("retrieve",          "generate")
     graph.add_edge("generate",          END)
-    graph.add_edge("general_knowledge", END)
 
     return graph.compile()
 
