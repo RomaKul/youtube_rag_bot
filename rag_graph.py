@@ -93,16 +93,18 @@ def fetch_video_summary(vectorstore: Chroma) -> str:
     return ""
 
 
-SYSTEM_PROMPT = """You are an AI assistant that analyzes YouTube videos.
-Use the provided video transcript context to answer accurately.
-If the answer is not contained in the context, honestly say so.
-Reference specific moments from the video when possible."""
+SYSTEM_PROMPT = """You are an AI assistant that analyzes YouTube videos subtitles.
+Use the provided video transcript context to answer questions accurately.
+If the answer is not contained in the context, answer it but mention about this limitation. 
+If the question is off-topic, answer it using your general knowledge.
+Context will have timestampes before some cunks, you can use them to cite the answer.
+"""
 
 _QUERY_REWRITE_SYSTEM = """You rewrite casual user questions into focused search
 queries for finding relevant passages in a video transcript.
 Respond with ONLY the rewritten query — no preamble, no quotes, no explanation.
 Keep it short (under 20 words). If the question is already a good search
-query, return it unchanged."""
+query, return it unchanged. New question must be written in the same language as the original question."""
 
 
 # ── Shared state ───────────────────────────────────────────────────────────────
@@ -270,8 +272,9 @@ def _format_docs(docs: list[Document]) -> str:
     for d in docs:
         idx = d.metadata.get("chunk_idx", "?")
         label = d.metadata.get("timestamp_label")
+        link  = d.metadata.get("deep_link")
         tag = f"[chunk {idx}{', ' + label if label else ''}]"
-        parts.append(f"{tag}\n{d.page_content}")
+        parts.append(f"{label}({link})\n{d.page_content}")
     return "\n\n---\n\n".join(parts)
 
 

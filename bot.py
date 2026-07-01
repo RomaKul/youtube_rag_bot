@@ -197,7 +197,7 @@ def bm25_cache_path(video_id: str) -> str:
 
 
 SUMMARY_PROMPT = """You are given a YouTube video transcript.
-Write a concise summary (5-7 sentences) covering:
+Write a concise summary 300 words covering:
 - The main topic and purpose of the video
 - Key points or arguments made
 - Any notable conclusions
