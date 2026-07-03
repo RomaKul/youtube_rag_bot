@@ -2,18 +2,7 @@
 python-telegram-bot==22.8
 langchain>=1.3.9
 langchain-core>=0.3.0
-langchain-chroma>=0.2.0
 langgraph>=1.2.5
-chromadb>=0.6.0
-youtube-transcript-api>=1.0.0
 tiktoken>=0.7.0
 python-dotenv>=1.0.0
 rank_bm25>=0.2.2
-sentence-transformers>=3.0.0
-
-# Ollama provider (local)
-langchain-ollama>=1.1.0
-
-# Bedrock provider (AWS)
-langchain-aws>=0.2.0
-boto3>=1.34.0

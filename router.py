@@ -43,7 +43,6 @@ logger = logging.getLogger(__name__)
 class Route(str, Enum):
     FROM_CONTEXT = "from_context"   # answer from cached chunks
     FROM_DB      = "from_db"        # need a fresh vector-DB search
-    OFF_TOPIC    = "off_topic"      # unrelated to the video
 
 
 # ── Classifier prompt ──────────────────────────────────────────────────────────
@@ -101,11 +100,6 @@ def classify_question(
 ) -> tuple[Route, str]:
     """
     Calls the LLM classifier and returns (Route, reason_string).
-
-    video_summary: the pre-generated summary fetched from ChromaDB
-                   (type='summary', chunk_idx=-1). Used as the topic hint
-                   so the classifier knows what the video is about from
-                   question #1, not just after the first retrieval.
 
     history: list of (question, answer) tuples from recent turns, used so
              follow-up questions classify correctly.

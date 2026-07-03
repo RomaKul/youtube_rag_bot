@@ -1,0 +1,9 @@
+# New dependencies for the AWS-deployed variant (bot_aws.py + local_watcher.py)
+# Append to requirements.txt / requirements_additions.txt
+
+boto3>=1.34.0
+opensearch-py>=2.6.0
+requests-aws4auth>=1.2.3
+langchain-community>=0.2.0   # provides OpenSearchVectorSearch
+langchain-aws>=1.6.0
+awscrt>=0.32.2

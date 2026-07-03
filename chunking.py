@@ -30,7 +30,6 @@ from typing import Optional
 import tiktoken
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
-from youtube_transcript_api._transcripts import FetchedTranscript
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +61,7 @@ class Segment:
         return self.start + self.duration
 
 
-def segments_from_fetched(fetched: FetchedTranscript) -> list[Segment]:
+def segments_from_fetched(fetched) -> list[Segment]:
     """Convert youtube-transcript-api FetchedTranscript → List[Segment]."""
     return [Segment(text=e.text, start=e.start, duration=e.duration) for e in fetched]
 

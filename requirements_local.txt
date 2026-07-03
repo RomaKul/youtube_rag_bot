@@ -1,0 +1,12 @@
+# Chroma provider (local) and reranking model
+langchain-chroma>=0.2.0
+chromadb>=0.6.0
+sentence-transformers>=3.0.0
+youtube-transcript-api>=1.0.0
+
+# Ollama provider (local)
+langchain-ollama>=1.1.0
+
+# Bedrock provider (AWS)
+langchain-aws>=0.2.0
+boto3>=1.34.0

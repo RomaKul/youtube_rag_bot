@@ -1,0 +1,19 @@
+# .dockerignore
+data/
+.env*
+__pycache__/
+*.pyc
+*.pkl
+*.db
+.git/
+tests/
+infra/
+*.md
+
+.env
+venv
+*.ipynb
+chroma_db
+ytbot-key.pem
+__pycache__
+bm25_cache

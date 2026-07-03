@@ -5,6 +5,15 @@ fused with Reciprocal Rank Fusion (RRF).
 Pure vector search misses exact terms (names, numbers, jargon). BM25 catches
 those. RRF combines both rankings without needing to calibrate score scales.
 
+Backend-agnostic vectorstore:
+  Same story as rag_graph.py — `Chroma` is imported only under
+  `if TYPE_CHECKING:`, never at runtime, so this module has zero hard
+  dependency on langchain_chroma. `hybrid_search()` is typed against
+  `VectorStoreLike` (a Protocol requiring only `similarity_search()`), which
+  both Chroma and OpenSearchVectorSearch implement identically. That's what
+  lets this file run unchanged in the AWS (OpenSearch-only) container without
+  `langchain-chroma` needing to be in that image's requirements.txt.
+
 Usage
 -----
     index = BM25Index.build(chunk_docs)          # once, at indexing time
@@ -20,14 +29,26 @@ import logging
 import pickle
 import re
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional, Protocol, runtime_checkable
 
-from langchain_chroma import Chroma
 from langchain_core.documents import Document
 
 logger = logging.getLogger(__name__)
 
 _TOKEN_RE = re.compile(r"[A-Za-zА-Яа-яЇїІіЄєҐґ0-9]+")
+
+
+if TYPE_CHECKING:
+    # Type-checking only — never executed at runtime (see module docstring).
+    from langchain_chroma import Chroma
+
+
+@runtime_checkable
+class VectorStoreLike(Protocol):
+    """Structural type: both Chroma and OpenSearchVectorSearch implement
+    similarity_search() with this shape, which is all hybrid_search() needs."""
+
+    def similarity_search(self, query: str, k: int = 4, **kwargs) -> list[Document]: ...
 
 
 def _tokenize(text: str) -> list[str]:
@@ -103,7 +124,7 @@ def reciprocal_rank_fusion(
 
 def hybrid_search(
     query: str,
-    vectorstore: Chroma,
+    vectorstore: VectorStoreLike,
     bm25_index: Optional[BM25Index],
     k: int = 10,
     vector_k: Optional[int] = None,

@@ -23,8 +23,6 @@ Key behaviours
 • from_context  : uses only the cached last-retrieval chunks; no DB touch.
 • from_db       : query rewrite → hybrid (vector + BM25) search → cross-encoder
                   rerank → generate.
-• off_topic     : skips all video context; answers from LLM general knowledge
-                  and appends OFF_TOPIC_NOTE so the user knows.
 • Recent chat history is injected into both routing and generation so
   follow-up questions work naturally.
 • After every from_db answer the retrieved docs are saved back into
@@ -32,6 +30,22 @@ Key behaviours
 • After a from_context answer the cache is NOT overwritten (it's still valid).
 • Answers include chunk/timestamp citations the user can use to jump to the
   exact moment in the video.
+
+Backend-agnostic vectorstore:
+  This module has NO hard runtime dependency on langchain_chroma. Chroma is
+  only imported inside an `if TYPE_CHECKING:` block for editor/mypy support —
+  it's never actually imported when the code runs. Everywhere else the
+  vectorstore is typed as `VectorStoreLike`, a Protocol requiring only
+  `similarity_search()`, which both Chroma and OpenSearchVectorSearch
+  implement identically. That's what lets this exact file be imported by
+  bot.py (local, Chroma) AND bot_aws.py (OpenSearch Serverless) without
+  langchain_chroma needing to be installed in the AWS image at all.
+
+  The one spot the two backends genuinely differ is fetching the video
+  summary (Chroma's metadata `.get(where=...)` vs. OpenSearch's filtered
+  `similarity_search`). `build_routed_rag_graph()` takes an optional
+  `summary_fetcher_fn` for exactly this — see bot_aws.py, which passes
+  `vectorstore_aws.fetch_summary_doc`.
 
 FIXED vs. original:
   - `_format_docs` no longer builds a Python set per doc (was a silent
@@ -41,14 +55,22 @@ FIXED vs. original:
   - LLM calls in generation nodes are wrapped in try/except so a transient
     provider error degrades to a user-facing message instead of crashing
     the whole graph invocation silently mid-route.
+  - langchain_chroma is no longer a hard import (see "Backend-agnostic
+    vectorstore" above) so this module loads fine in a Chroma-less AWS image.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import TypedDict, Optional
+from typing import (
+    TYPE_CHECKING,
+    Callable,
+    Optional,
+    Protocol,
+    TypedDict,
+    runtime_checkable,
+)
 
-from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -69,15 +91,39 @@ SIMILARITY_K   = 4    # final number of chunks fed to the LLM
 CANDIDATE_K    = 20   # candidates pulled before re-ranking down to SIMILARITY_K
 
 
+if TYPE_CHECKING:
+    # Type-checking only — never executed at runtime. Combined with
+    # `from __future__ import annotations` above (which turns every
+    # annotation in this module into a plain string), this means Chroma is
+    # NOT a runtime import here. Keep this import here purely so mypy/IDEs
+    # can resolve `Chroma` if you reference it explicitly anywhere.
+    from langchain_chroma import Chroma
+
+
+@runtime_checkable
+class VectorStoreLike(Protocol):
+    """Structural type covering whatever vectorstore backend is in play
+    (Chroma locally, OpenSearchVectorSearch in AWS). Both implement
+    similarity_search() with this shape, which is all this module needs
+    outside of fetch_video_summary()."""
+
+    def similarity_search(self, query: str, k: int = 4, **kwargs) -> list[Document]: ...
+
+
 # ── Summary fetch ──────────────────────────────────────────────────────────────
 
-def fetch_video_summary(vectorstore: Chroma) -> str:
+def fetch_video_summary(vectorstore: "Chroma") -> str:
     """
-    Retrieves the LLM-generated summary document from ChromaDB.
+    Default summary fetcher — Chroma-specific.
 
     index_transcript() stores it with metadata type='summary', chunk_idx=-1.
     We query by metadata filter so we never pay for an embedding lookup.
     Returns an empty string if none exists (e.g. summary generation failed).
+
+    This relies on Chroma's `.get(where=...)` API, which OpenSearch doesn't
+    have. Non-Chroma backends should pass their own `summary_fetcher_fn` to
+    build_routed_rag_graph() instead of relying on this default — see
+    vectorstore_aws.fetch_summary_doc() + bot_aws.py.
     """
     try:
         results = vectorstore.get(
@@ -171,7 +217,7 @@ def make_query_rewrite_node(llm: BaseChatModel):
     return rewrite
 
 
-def make_retrieve_node(vectorstore: Chroma, bm25_index_fn):
+def make_retrieve_node(vectorstore: VectorStoreLike, bm25_index_fn):
     """
     bm25_index_fn: callable() → Optional[BM25Index]
     Pulled in lazily (not baked in at build time) so a freshly (re)built BM25
@@ -226,7 +272,7 @@ def route_after_classify(state: RAGState) -> str:
 # ── Graph builder ──────────────────────────────────────────────────────────────
 
 def build_routed_rag_graph(
-    vectorstore: Chroma,
+    vectorstore: VectorStoreLike,
     llm: BaseChatModel,
     prev_chunks_fn,          # callable() → list[Document]
     history_fn=None,         # callable() → list[tuple[str, str]]
@@ -292,10 +338,15 @@ def _format_history_for_prompt(history: list[tuple[str, str]]) -> str:
 
 async def receive_question(update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Returns the conversation-state constant to stay in (bot.py's ASK_QUESTION),
-    imported lazily to avoid a circular import at module load time.
+    Returns the conversation-state constant to stay in (ASK_QUESTION),
+    imported lazily to avoid a circular import at module load time. Tries
+    bot.py first (local dev) then bot_aws.py (AWS deployment) — both define
+    the same ASK_URL, ASK_LANG, ASK_QUESTION = range(3) constants.
     """
-    from bot import ASK_QUESTION  # local import: bot.py imports this module too
+    try:
+        from bot import ASK_QUESTION
+    except ImportError:
+        from bot_aws import ASK_QUESTION
 
     agent = context.user_data.get("agent")
     if not agent:
