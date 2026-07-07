@@ -24,6 +24,14 @@ Required new env vars (on top of bot.py's):
   SQS_REQUEST_QUEUE_URL    transcript-request queue (bot → local watcher)
   SQS_RESULT_QUEUE_URL     optional; speeds up the wait vs. pure S3 polling
   OPENSEARCH_ENDPOINT      OpenSearch Serverless collection host
+
+CHANGED: dropped manual language selection entirely, mirroring bot.py. The
+ASK_LANG conversation step and SUPPORTED_LANGS keyboard are gone —
+local_watcher.py now auto-detects the best available transcript (preferring
+a manually created one, falling back to auto-generated), so the user only
+ever needs to send a URL. `lang` is still threaded through as the
+auto-detected language code (used for chunk metadata + status messages),
+it's just no longer something the user picks.
 """
 
 import os
@@ -33,7 +41,7 @@ import logging
 from typing import Optional
 from dotenv import load_dotenv
 
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram import Update, ReplyKeyboardRemove
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
     ConversationHandler, filters, ContextTypes
@@ -79,12 +87,8 @@ SIMILARITY_THR   = float(os.getenv("SIMILARITY_THR", 0.75))
 TRANSCRIPT_WAIT_TIMEOUT_S = int(os.getenv("TRANSCRIPT_WAIT_TIMEOUT_S", 90))
 TRANSCRIPT_POLL_INTERVAL_S = int(os.getenv("TRANSCRIPT_POLL_INTERVAL_S", 4))
 
-ASK_URL, ASK_LANG, ASK_QUESTION = range(3)
-
-SUPPORTED_LANGS = {
-    "uk": "🇺🇦 Ukrainian", "en": "🇬🇧 English", "de": "🇩🇪 German",
-    "fr": "🇫🇷 French", "pl": "🇵🇱 Polish", "es": "🇪🇸 Spanish", "ru": "🇷🇺 Russian",
-}
+# Conversation states (language selection removed — handled automatically)
+ASK_URL, ASK_QUESTION = range(2)
 
 
 # ── Provider factory (bedrock only — ollama doesn't make sense to run in AWS) ──
@@ -109,30 +113,31 @@ def extract_video_id(url: str) -> Optional[str]:
 
 
 # ── Transcript: S3-first, SQS-to-local fallback ────────────────────────────────
-def get_transcript_via_s3_and_local_worker(
-    video_id: str, lang: str
-) -> tuple[str, list[Segment]]:
+def get_transcript_via_s3_and_local_worker(video_id: str) -> tuple[str, list[Segment], str]:
     """
     1. Check S3 — if already fetched (by this or any prior request), use it.
     2. Otherwise enqueue an SQS job for local_watcher.py and poll S3 until
        the transcript appears or TRANSCRIPT_WAIT_TIMEOUT_S elapses.
-    """
-    cached = s3store.get_transcript(video_id, lang)
-    if cached:
-        text, seg_dicts = cached
-        segments = [Segment(**d) for d in seg_dicts]
-        return text, segments
 
-    queue.enqueue_transcript_request(video_id, lang)
+    No language is requested — local_watcher.py auto-detects the best
+    available transcript for the video. Returns (text, segments, lang_code).
+    """
+    cached = s3store.get_transcript(video_id)
+    if cached:
+        text, seg_dicts, lang_code = cached
+        segments = [Segment(**d) for d in seg_dicts]
+        return text, segments, lang_code
+
+    queue.enqueue_transcript_request(video_id)
 
     deadline = time.time() + TRANSCRIPT_WAIT_TIMEOUT_S
     while time.time() < deadline:
         time.sleep(TRANSCRIPT_POLL_INTERVAL_S)
-        cached = s3store.get_transcript(video_id, lang)
+        cached = s3store.get_transcript(video_id)
         if cached:
-            text, seg_dicts = cached
+            text, seg_dicts, lang_code = cached
             segments = [Segment(**d) for d in seg_dicts]
-            return text, segments
+            return text, segments, lang_code
 
     raise TimeoutError(
         f"No transcript appeared in S3 within {TRANSCRIPT_WAIT_TIMEOUT_S}s. "
@@ -237,31 +242,21 @@ async def receive_url(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         )
         return ASK_URL
     context.user_data["video_id"] = video_id
-    keyboard = [[f"{code} — {name}"] for code, name in SUPPORTED_LANGS.items()]
-    await update.message.reply_text(
-        f"✅ Video found: `{video_id}`\n\n🌐 Specify the transcript language:",
+
+    status_msg = await update.message.reply_text(
+        f"✅ Video found: `{video_id}`\n⏳ Checking S3 / requesting from local fetcher if needed…",
         parse_mode="Markdown",
-        reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True),
+        reply_markup=ReplyKeyboardRemove(),
     )
-    return ASK_LANG
-
-
-async def receive_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    lang = update.message.text.strip()[:2].lower()
-    video_id = context.user_data.get("video_id")
-    if lang not in SUPPORTED_LANGS:
-        await update.message.reply_text("❌ Please choose a language from the keyboard.")
-        return ASK_LANG
-
-    context.user_data["lang"] = lang
-    status_msg = await update.message.reply_text("⏳ Checking transcript…", reply_markup=ReplyKeyboardRemove())
 
     try:
-        await safe_update(status_msg, "⏳ Checking S3 / requesting from local fetcher if needed…")
-        text, segments = get_transcript_via_s3_and_local_worker(video_id, lang)
+        text, segments, lang = get_transcript_via_s3_and_local_worker(video_id)
 
         total_tokens = count_tokens(text)
-        await safe_update(status_msg, f"✅ Transcript ready\n📊 Tokens: {total_tokens}\n⏳ Indexing…")
+        await safe_update(
+            status_msg,
+            f"✅ Transcript ready (language: {lang or 'unknown'})\n📊 Tokens: {total_tokens}\n⏳ Indexing…"
+        )
 
         llm = context.bot_data["llm"]
         vstore, n_chunks = index_transcript_aws(video_id, text, lang, llm, segments)
@@ -285,7 +280,7 @@ async def receive_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         chunk_line = f"📦 {n_chunks} chunks" if n_chunks >= 0 else "📦 Using existing index"
         await safe_update(
             status_msg,
-            f"✅ Video indexed!\n{chunk_line}\n"
+            f"✅ Video indexed!\n🌐 Transcript language: {lang or 'unknown'}\n{chunk_line}\n"
             f"🤖 Provider: AWS Bedrock\n"
             f"☁️ Vector store: OpenSearch Serverless\n"
             f"🔎 Retrieval: hybrid (vector + BM25) + cross-encoder rerank\n\n"
@@ -312,10 +307,11 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🤖 *How I work:*\n\n"
         "1️⃣ /start — let's begin\n2️⃣ Send a YouTube video link\n"
-        "3️⃣ Choose the transcript language\n"
-        "4️⃣ If needed, a transcript is fetched by a local worker (YouTube blocks cloud IPs)\n"
-        "5️⃣ I store chunks in OpenSearch Serverless + a BM25 index in S3\n"
-        "6️⃣ I answer your questions using hybrid retrieval + reranking (RAG)\n\n"
+        "3️⃣ I auto-detect the best transcript (preferring the original, "
+        "non auto-generated one, in whatever language is available) via a "
+        "local worker (YouTube blocks cloud IPs)\n"
+        "4️⃣ I store chunks in OpenSearch Serverless + a BM25 index in S3\n"
+        "5️⃣ I answer your questions using hybrid retrieval + reranking (RAG)\n\n"
         "🟠 *Provider:* AWS Bedrock\n\n"
         "📌 *Commands:*\n/start — new video\n/cancel — end session\n/help — this message",
         parse_mode="Markdown",
@@ -339,7 +335,6 @@ def main():
         entry_points=[CommandHandler("start", start)],
         states={
             ASK_URL:      [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_url)],
-            ASK_LANG:     [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_lang)],
             ASK_QUESTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_question)],
         },
         fallbacks=[CommandHandler("cancel", cancel), CommandHandler("start", start)],
