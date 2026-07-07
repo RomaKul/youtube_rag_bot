@@ -58,7 +58,7 @@ Categories:
                    contains the relevant information.
   "from_db"      — The question is about the video but the [PREVIOUS CONTEXT]
                    does not contain enough information to answer it. A fresh
-                   search of the video transcript database is needed.
+                   search of the video transcript database is needed. 
 
 Use [RECENT CHAT HISTORY] to resolve follow-up questions ("tell me more about
 that", "what else did he say?", "why?") — these refer to the previous turn's

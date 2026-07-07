@@ -77,13 +77,13 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import StateGraph, START, END
 from telegram.ext import ContextTypes, ConversationHandler
 
-from router import (
+from app.rag.router import (
     Route, classify_question,
     save_retrieved_chunks, load_retrieved_chunks,
     save_turn, load_history,
 )
-from hybrid_search import BM25Index, hybrid_search
-from reranker import rerank
+from app.rag.hybrid_search import BM25Index, hybrid_search
+from app.rag.reranker import rerank
 
 logger = logging.getLogger(__name__)
 
@@ -345,9 +345,9 @@ async def receive_question(update, context: ContextTypes.DEFAULT_TYPE):
     the same ASK_URL, ASK_LANG, ASK_QUESTION = range(3) constants.
     """
     try:
-        from bot import ASK_QUESTION
+        from app.bots.bot_local import ASK_QUESTION
     except ImportError:
-        from bot_aws import ASK_QUESTION
+        from app.bots.bot_aws import ASK_QUESTION
 
     agent = context.user_data.get("agent")
     if not agent:

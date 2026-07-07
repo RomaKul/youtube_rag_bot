@@ -41,9 +41,9 @@ from youtube_transcript_api import (
     NoTranscriptFound,
 )
 
-from chunking import segments_from_fetched, Segment
-from s3_transcript_store import put_transcript, transcript_exists
-from sqs_transcript_queue import (
+from app.rag.chunking import segments_from_fetched, Segment
+from app.storage.s3_transcript_store import put_transcript, transcript_exists
+from app.storage.sqs_transcript_queue import (
     receive_transcript_requests, ack_transcript_request, notify_result,
 )
 

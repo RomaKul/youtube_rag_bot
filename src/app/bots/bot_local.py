@@ -50,15 +50,15 @@ from youtube_transcript_api import (
 )
 
 # Chunking utilities
-from chunking import (
+from app.rag.chunking import (
     ChunkingConfig, Segment, build_documents,
     segments_from_fetched, count_tokens,
 )
 
 # Router, hybrid search, and routed graph
-from router import load_retrieved_chunks, load_history
-from hybrid_search import BM25Index
-from rag_graph import build_routed_rag_graph, receive_question
+from app.rag.router import load_retrieved_chunks, load_history
+from app.rag.hybrid_search import BM25Index
+from app.rag.rag_graph import build_routed_rag_graph, receive_question
 
 load_dotenv()
 
@@ -72,8 +72,8 @@ logger = logging.getLogger(__name__)
 # ── Config ─────────────────────────────────────────────────────────────────────
 PROVIDER       = os.getenv("PROVIDER", "ollama").lower()  # "ollama" | "bedrock"
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHROMA_DIR     = os.getenv("CHROMA_DIR", "./chroma_db")
-BM25_DIR       = os.getenv("BM25_DIR", "./bm25_cache")
+CHROMA_DIR     = os.getenv("CHROMA_DIR", "./data/chroma_db")
+BM25_DIR       = os.getenv("BM25_DIR", "./data/bm25_cache")
 SIMILARITY_K   = int(os.getenv("SIMILARITY_K", 4))
 
 # Ollama settings (used when PROVIDER=ollama)
@@ -89,7 +89,7 @@ BEDROCK_EMBED_MODEL   = os.getenv("BEDROCK_EMBED_MODEL", "cohere.embed-multiling
 # Chunking (configurable via .env)
 CHUNK_STRATEGY   = os.getenv("CHUNK_STRATEGY", "timestamp")   # sentence | timestamp | semantic
 CHUNK_TOKENS     = int(os.getenv("CHUNK_TOKENS",    300))
-OVERLAP_TOKENS   = int(os.getenv("OVERLAP_TOKENS",   30))
+OVERLAP_SENTANCES   = int(os.getenv("OVERLAP_SENTANCES",   1))
 SIMILARITY_THR   = float(os.getenv("SIMILARITY_THR", 0.75))   # semantic only
 
 # Conversation states (language selection removed — handled automatically)
@@ -244,7 +244,7 @@ def index_transcript(
     cfg = ChunkingConfig(
         strategy=CHUNK_STRATEGY,
         chunk_tokens=CHUNK_TOKENS,
-        overlap_tokens=OVERLAP_TOKENS,
+        overlap_sentences=OVERLAP_SENTANCES,
         similarity_threshold=SIMILARITY_THR,
     )
 
@@ -356,7 +356,7 @@ async def receive_url(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             f"✅ Video already indexed – using existing data.\n"
             f"📦 {n_chunks} chunks\n"
             f"🤖 Provider: {'AWS Bedrock' if PROVIDER == 'bedrock' else 'Ollama (local)'}\n"
-            f"✂️ Chunking: {CHUNK_STRATEGY}  ({CHUNK_TOKENS} tok, {OVERLAP_TOKENS} overlap)\n"
+            f"✂️ Chunking: {CHUNK_STRATEGY}  ({CHUNK_TOKENS} tok, {OVERLAP_SENTANCES} overlap)\n"
             f"🔎 Retrieval: hybrid (vector + BM25) + cross-encoder rerank\n\n"
             f"💬 Ask me anything about the video.\n"
             f"New video → /start  |  Exit → /cancel",
@@ -390,9 +390,9 @@ async def receive_url(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             status_msg,
             f"✅ Video indexed!\n"
             f"🌐 Transcript language: {lang}\n"
-            f"📦 {n_chunks} chunks (~{CHUNK_TOKENS} tokens, {OVERLAP_TOKENS}-token overlap)\n"
+            f"📦 {n_chunks} chunks (~{CHUNK_TOKENS} tokens, {OVERLAP_SENTANCES}-sentence overlap)\n"
             f"🤖 Provider: {'AWS Bedrock' if PROVIDER == 'bedrock' else 'Ollama (local)'}\n"
-            f"✂️ Chunking: {CHUNK_STRATEGY}  ({CHUNK_TOKENS} tok, {OVERLAP_TOKENS} overlap)\n"
+            f"✂️ Chunking: {CHUNK_STRATEGY}  ({CHUNK_TOKENS} tok, {OVERLAP_SENTANCES} overlap)\n"
             f"🔎 Retrieval: hybrid (vector + BM25) + cross-encoder rerank\n\n"
             f"💬 Ask me anything about the video.\n"
             f"New video → /start  |  Exit → /cancel"

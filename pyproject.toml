@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "app"
+version = "0.1.0"
+description = "YouTube transcript RAG bot (local + AWS)"
+readme = "README.md"
+requires-python = ">=3.10"
+# Core/shared deps go here or keep using requirements/base.txt and
+# reference it manually — either works, this list is optional.
+dependencies = []
+
+[project.optional-dependencies]
+local = []  # mirrors requirements/local.txt
+aws = []    # mirrors requirements/aws.txt
+
+[tool.setuptools.packages.find]
+where = ["src"]

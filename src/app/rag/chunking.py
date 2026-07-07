@@ -21,7 +21,7 @@ FIXED vs. original:
   - `timestamp_aware_chunks` used to window over raw transcript *segments*
     directly. YouTube segments are cut on arbitrary time boundaries, not
     sentence boundaries, so a sentence could end up split across two chunks,
-    and the token-based `overlap_tokens` tail could cut a sentence in half
+    and the token-based `overlap_sentences` tail could cut a sentence in half
     too. It now first reconstructs whole sentences from the segments
     (keeping each sentence's start/end time), windows over *sentences*, and
     overlaps by whole sentences (`overlap_sentences`, default 1) — matching

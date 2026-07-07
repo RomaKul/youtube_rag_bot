@@ -5,3 +5,4 @@ chroma_db
 ytbot-key.pem
 __pycache__
 bm25_cache
+data

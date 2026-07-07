@@ -1,4 +1,4 @@
-# infra/docker/Dockerfile.cloud
+# infra/Dockerfile.cloud
 FROM python:3.12-slim
 
 WORKDIR /app
@@ -9,12 +9,14 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Спочатку залежності (кешується Docker-ом окремо від коду)
-COPY requirements.txt requirements_aws.txt ./
-RUN pip install --no-cache-dir -r requirements.txt -r requirements_aws.txt
+COPY requirements/aws.txt requirements/base.txt .
+RUN pip install --no-cache-dir -r base.txt -r aws.txt
 
-# Код
-COPY bot_aws.py chunking.py hybrid_search.py \
- rag_graph.py reranker.py router.py vectorstore_aws.py \
- s3_transcript_store.py sqs_transcript_queue.py .
+# Метадані пакету + код
+COPY pyproject.toml ./
+COPY src/ ./src/
 
-CMD ["python", "-m", "bot_aws"]
+# Встановлюємо сам пакет (editable не потрібен у контейнері)
+RUN pip install --no-cache-dir --no-deps .
+
+CMD ["python", "-m", "app.bots.bot_aws"]

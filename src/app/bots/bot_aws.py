@@ -52,14 +52,14 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.embeddings import Embeddings
 from langchain_core.documents import Document
 
-from chunking import ChunkingConfig, Segment, build_documents, count_tokens
-from router import load_retrieved_chunks, load_history
-from hybrid_search import BM25Index
-from rag_graph import build_routed_rag_graph, receive_question
+from app.rag.chunking import ChunkingConfig, Segment, build_documents, count_tokens
+from app.rag.router import load_retrieved_chunks, load_history
+from app.rag.hybrid_search import BM25Index
+from app.rag.rag_graph import build_routed_rag_graph, receive_question
 
-import s3_transcript_store as s3store
-import sqs_transcript_queue as queue
-import vectorstore_aws as vs_aws
+import app.storage.s3_transcript_store as s3store
+import app.storage.sqs_transcript_queue as queue
+import app.storage.vectorstore_aws as vs_aws
 
 load_dotenv()
 
@@ -81,7 +81,7 @@ BEDROCK_EMBED_MODEL  = os.getenv("BEDROCK_EMBED_MODEL", "cohere.embed-multilingu
 
 CHUNK_STRATEGY   = os.getenv("CHUNK_STRATEGY", "timestamp")
 CHUNK_TOKENS     = int(os.getenv("CHUNK_TOKENS",    300))
-OVERLAP_TOKENS   = int(os.getenv("OVERLAP_TOKENS",   30))
+OVERLAP_SENTANCES   = int(os.getenv("OVERLAP_SENTANCES",   1))
 SIMILARITY_THR   = float(os.getenv("SIMILARITY_THR", 0.75))
 
 TRANSCRIPT_WAIT_TIMEOUT_S = int(os.getenv("TRANSCRIPT_WAIT_TIMEOUT_S", 90))
@@ -175,7 +175,7 @@ def index_transcript_aws(video_id: str, text: str, lang: str, llm: BaseChatModel
 
     cfg = ChunkingConfig(
         strategy=CHUNK_STRATEGY, chunk_tokens=CHUNK_TOKENS,
-        overlap_tokens=OVERLAP_TOKENS, similarity_threshold=SIMILARITY_THR,
+        overlap_sentences=OVERLAP_SENTANCES, similarity_threshold=SIMILARITY_THR,
     )
     chunk_docs = build_documents(
         video_id=video_id, lang=lang, text=text, segments=segments,
