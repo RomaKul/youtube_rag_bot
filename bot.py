@@ -106,7 +106,7 @@ def build_llm() -> BaseChatModel:
             model=BEDROCK_LLM_MODEL,
             region_name=AWS_REGION,
             temperature=0.3,
-            max_tokens=1024,
+            max_tokens=256,
         )
     else:
         from langchain_ollama import ChatOllama
@@ -115,7 +115,9 @@ def build_llm() -> BaseChatModel:
             model=OLLAMA_MODEL,
             base_url=OLLAMA_BASE_URL,
             temperature=0.3,
-            num_predict=1024,
+            num_predict=256,
+            num_thread=os.cpu_count(),
+            keep_alive="30m"
         )
 
 
