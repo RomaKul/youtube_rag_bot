@@ -144,6 +144,7 @@ Use the provided video transcript context to answer questions accurately.
 If the answer is not contained in the context, answer it but mention about this limitation. 
 If the question is off-topic, answer it using your general knowledge.
 Context will have timestampes before some cunks, you can use them to cite the answer.
+Answer in the same language as the question. 
 """
 
 _QUERY_REWRITE_SYSTEM = """You rewrite casual user questions into focused search
