@@ -18,6 +18,14 @@ FIXED vs. original:
     code tried to read e.g. `config.strategy` without explicitly passing
     `config=`. Fixed to `config: Optional[ChunkingConfig] = None` with a
     `config = config or ChunkingConfig()` inside the function body.
+  - `timestamp_aware_chunks` used to window over raw transcript *segments*
+    directly. YouTube segments are cut on arbitrary time boundaries, not
+    sentence boundaries, so a sentence could end up split across two chunks,
+    and the token-based `overlap_tokens` tail could cut a sentence in half
+    too. It now first reconstructs whole sentences from the segments
+    (keeping each sentence's start/end time), windows over *sentences*, and
+    overlaps by whole sentences (`overlap_sentences`, default 1) — matching
+    the sentence strategy's behavior.
 """
 
 from __future__ import annotations
@@ -140,35 +148,92 @@ def sentence_aware_chunks(
 
 # ── Strategy 2: Timestamp-aware chunking ──────────────────────────────────────
 
+def _segments_with_offsets(segments: list[Segment]) -> tuple[str, list[tuple[int, int, Segment]]]:
+    """
+    Joins segment texts into one string (space-separated) and records, for each
+    segment, the [start_char, end_char) span it occupies in that joined string.
+    Lets us map a sentence's character position back to the segment(s) — and
+    therefore the timestamps — it came from.
+    """
+    full_text = ""
+    offsets: list[tuple[int, int, Segment]] = []
+    for seg in segments:
+        if full_text:
+            full_text += " "
+        start = len(full_text)
+        full_text += seg.text
+        offsets.append((start, len(full_text), seg))
+    return full_text, offsets
+
+
+def _segment_at(offsets: list[tuple[int, int, Segment]], pos: int) -> Optional[Segment]:
+    for start, end, seg in offsets:
+        if start <= pos < end:
+            return seg
+    return offsets[-1][2] if offsets else None
+
+
+def _sentences_with_timestamps(segments: list[Segment]) -> list[tuple[str, float, float]]:
+    """
+    Reconstructs whole sentences from raw (often mid-sentence) transcript
+    segments and tags each sentence with the start/end time of the segment(s)
+    it spans, so a sentence is never later split across two chunks.
+    """
+    full_text, offsets = _segments_with_offsets(segments)
+    sentences = _split_into_sentences(full_text)
+
+    result: list[tuple[str, float, float]] = []
+    search_from = 0
+    for sent in sentences:
+        idx = full_text.find(sent, search_from)
+        if idx == -1:
+            idx = search_from  # defensive fallback; shouldn't normally trigger
+        start_pos = idx
+        end_pos = idx + len(sent)
+        search_from = end_pos
+
+        start_seg = _segment_at(offsets, start_pos)
+        end_seg = _segment_at(offsets, max(start_pos, end_pos - 1))
+        start_time = start_seg.start if start_seg else 0.0
+        end_time = end_seg.end if end_seg else start_time
+
+        result.append((sent, start_time, end_time))
+
+    return result
+
+
 def timestamp_aware_chunks(
     segments: list[Segment],
     video_id: str,
     lang: str,
     chunk_tokens: int = 300,
-    overlap_tokens: int = 30,
+    overlap_sentences: int = 1,
 ) -> list[Document]:
     """
-    Groups raw transcript segments into chunks while preserving start_time.
+    Groups whole sentences (reconstructed from the raw transcript segments)
+    into windows of <= chunk_tokens tokens, so a sentence is never split
+    between two chunks. Preserves start_time/end_time metadata for deep links.
+    Adjacent chunks share `overlap_sentences` sentences for context continuity.
     """
+    sentence_data = _sentences_with_timestamps(segments)
     chunks: list[Document] = []
     i = 0
-    prev_tail = ""
     chunk_idx = 0
 
-    while i < len(segments):
-        window_segs: list[Segment] = []
-        token_count = count_tokens(prev_tail)
+    while i < len(sentence_data):
+        window: list[tuple[str, float, float]] = []
+        token_count = 0
 
-        for j in range(i, len(segments)):
-            s_tokens = count_tokens(segments[j].text)
-            if token_count + s_tokens > chunk_tokens and window_segs:
+        for j in range(i, len(sentence_data)):
+            s_tokens = count_tokens(sentence_data[j][0])
+            if token_count + s_tokens > chunk_tokens and window:
                 break
-            window_segs.append(segments[j])
+            window.append(sentence_data[j])
             token_count += s_tokens
 
-        chunk_text = (prev_tail + " " + " ".join(s.text for s in window_segs)).strip()
-        start_sec   = window_segs[0].start
-        end_sec     = window_segs[-1].end
+        chunk_text = " ".join(s[0] for s in window)
+        start_sec = window[0][1]
+        end_sec = window[-1][2]
 
         chunks.append(Document(
             page_content=chunk_text,
@@ -185,18 +250,11 @@ def timestamp_aware_chunks(
             },
         ))
 
-        full_text = " ".join(s.text for s in window_segs)
-        enc = _get_encoder()
-        if enc:
-            toks = enc.encode(full_text)
-            prev_tail = enc.decode(toks[-overlap_tokens:]) if len(toks) > overlap_tokens else full_text
-        else:
-            prev_tail = full_text[-(overlap_tokens * 4):]
-
-        i += len(window_segs)
+        advance = max(1, len(window) - overlap_sentences)
+        i += advance
         chunk_idx += 1
 
-    logger.info(f"[timestamp] {len(chunks)} chunks from {len(segments)} segments")
+    logger.info(f"[timestamp] {len(chunks)} chunks from {len(sentence_data)} sentences")
     return chunks
 
 
@@ -289,8 +347,7 @@ def semantic_chunks(
 class ChunkingConfig:
     strategy: str = "timestamp"       # "sentence" | "timestamp" | "semantic"
     chunk_tokens: int = 300
-    overlap_tokens: int = 30          # used by timestamp strategy
-    overlap_sentences: int = 1        # used by sentence strategy
+    overlap_sentences: int = 1        # used by sentence & timestamp strategies
     similarity_threshold: float = 0.75  # used by semantic strategy
     min_sentences_per_chunk: int = 3  # used by semantic strategy
 
@@ -334,7 +391,7 @@ def build_documents(
             video_id=video_id,
             lang=lang,
             chunk_tokens=config.chunk_tokens,
-            overlap_tokens=config.overlap_tokens,
+            overlap_sentences=config.overlap_sentences,
         )
 
     elif strategy == "semantic":
