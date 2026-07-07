@@ -9,8 +9,8 @@ so the bot runs in AWS but transcript *fetching* must happen from your local mac
 ┌──────────────────────┐        SQS        ┌────────────────────────────┐
 │   YOUR LOCAL PC      │ ─────────────────► │   AWS ECS / Fargate        │
 │                      │                    │                            │
-│  transcript/         │        S3          │  bot/bot_cloud.py          │
-│  watcher.py          │ ◄────────────────► │                            │
+│  app/watcher/        │        S3          │  app/bots/bot_aws.py       │
+│  local_watcher.py    │ ◄────────────────► │                            │
 │                      │                    │  ┌─────────────────────┐   │
 │  Fetches YouTube     │                    │  │ OpenSearch Serverless│   │
 │  transcripts         │                    │  │ (vector index)      │   │
@@ -24,7 +24,7 @@ so the bot runs in AWS but transcript *fetching* must happen from your local mac
 1. User sends a YouTube link to the Telegram bot (running in AWS)
 2. Bot checks S3 — if transcript already cached, uses it directly
 3. If not cached, bot pushes a job to SQS and waits (up to 90s)
-4. Your local `watcher.py` picks up the SQS job, fetches transcript, uploads to S3
+4. Your local `app/watcher/local_watcher.py` picks up the SQS job, fetches transcript, uploads to S3
 5. Bot gets the transcript from S3, chunks it, indexes into OpenSearch + BM25
 6. Bot answers questions via hybrid search + cross-encoder rerank + LLM
 
@@ -261,7 +261,7 @@ aws logs create-log-group --log-group-name /ecs/youtube-rag-bot
 
 ## Step 2 — Build and Push Docker Image
 
-From the **project root** (`youtube-rag-bot/`):
+From the **project root** (`youtube-rag-bot/`, the folder containing `pyproject.toml` and `src/`):
 
 ```bash
 export ECR_URI="${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com/youtube-rag-bot"
@@ -270,7 +270,7 @@ export ECR_URI="${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com/youtube-rag-bo
 aws ecr get-login-password --region us-east-1 \
   | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com
 
-# Build
+# Build (Dockerfile installs pyproject.toml + src/ and runs `python -m app.bots.bot_aws`)
 docker build -f infra/Dockerfile.cloud -t youtube-rag-bot:latest .
 
 # Tag and push
@@ -434,11 +434,12 @@ aws iam put-user-policy \
 
 ```bash
 cd youtube-rag-bot/
-pip install -r requirements.txt -r requirements.local.txt
+source venv/bin/activate
 
-python -m bot.transcript.watcher
-# або якщо файл ще не реструктуровано:
-python local_watcher.py
+pip install -e .
+pip install -r requirements/aws.txt   # boto3, youtube-transcript-api, etc.
+
+python -m app.watcher.local_watcher
 ```
 
 ### Run automatically on startup
@@ -456,8 +457,9 @@ python local_watcher.py
   <string>com.ytragbot.watcher</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/bin/python3</string>
-    <string>/Users/yourname/youtube-rag-bot/local_watcher.py</string>
+    <string>/Users/yourname/youtube-rag-bot/venv/bin/python</string>
+    <string>-m</string>
+    <string>app.watcher.local_watcher</string>
   </array>
   <key>WorkingDirectory</key>
   <string>/Users/yourname/youtube-rag-bot</string>
@@ -497,7 +499,7 @@ After=network.target
 Type=simple
 User=youruser
 WorkingDirectory=/home/youruser/youtube-rag-bot
-ExecStart=/usr/bin/python3 local_watcher.py
+ExecStart=/home/youruser/youtube-rag-bot/venv/bin/python -m app.watcher.local_watcher
 Restart=always
 RestartSec=5
 EnvironmentFile=/home/youruser/youtube-rag-bot/.env.watcher
@@ -527,7 +529,7 @@ export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output tex
 export ECR_URI="${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com/youtube-rag-bot"
 
 echo "🔨 Building image..."
-docker build -f infra/docker/Dockerfile.cloud -t youtube-rag-bot:latest .
+docker build -f infra/Dockerfile.cloud -t youtube-rag-bot:latest .
 
 echo "🔐 Logging into ECR..."
 aws ecr get-login-password --region us-east-1 \
@@ -649,6 +651,10 @@ TOKEN="your_token"
 curl "https://api.telegram.org/bot${TOKEN}/getMe"
 ```
 
+### `ModuleNotFoundError: No module named 'app'` (inside the container)
+
+Means `pip install -e .` / `pip install .` didn't run in the image, or `pyproject.toml` / `src/` weren't copied before that step. Check `infra/Dockerfile.cloud` copies both and runs the install before the `CMD`.
+
 ---
 
 ## Estimated Monthly Cost
@@ -666,7 +672,7 @@ curl "https://api.telegram.org/bot${TOKEN}/getMe"
 
 > **OpenSearch Serverless minimum cost (~$350/month) dominates.** If this is too
 > expensive for a personal or small-scale bot, consider these alternatives —
-> only `vectorstore_aws.py` needs to change, nothing else in the codebase:
+> only `src/app/storage/vectorstore_aws.py` needs to change, nothing else in the codebase:
 >
 > - **pgvector on RDS Aurora Serverless v2** — ~$30/month, proper vector search,
 >   scales to zero when idle
@@ -678,7 +684,7 @@ curl "https://api.telegram.org/bot${TOKEN}/getMe"
 
 ## Environment Variables Reference
 
-### Cloud bot (`bot_cloud.py` / ECS task definition)
+### Cloud bot (`app.bots.bot_aws` / ECS task definition)
 
 | Variable | Required | Example | Description |
 |---|---|---|---|
@@ -697,7 +703,7 @@ curl "https://api.telegram.org/bot${TOKEN}/getMe"
 | `TRANSCRIPT_WAIT_TIMEOUT_S` | | `90` | Seconds to wait for local watcher |
 | `USER_QUOTA_BYTES` | | `1073741824` | Per-user storage quota (default 1 GB) |
 
-### Local watcher (`.env.watcher` on your machine)
+### Local watcher (`app.watcher.local_watcher`, `.env.watcher` on your machine)
 
 | Variable | Required | Example |
 |---|---|---|

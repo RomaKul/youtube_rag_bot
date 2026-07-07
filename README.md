@@ -2,7 +2,7 @@
 
 Analyzes YouTube videos via transcripts. Supports two deployment modes via a single `.env` switch.
 
-| Mode | `PROVIDER=ollama` | `PROVIDER=bedrock` |
+| Mode | `PROVIDER=ollama` | `PROVIDER=bedrock and bot_aws.py` |
 |---|---|---|
 | **Where it runs** | Your local machine | AWS EC2 (t3.micro) |
 | **LLM** | gemma3:4b via Ollama | Amazon Nova Lite |
@@ -20,7 +20,18 @@ python -m venv venv
 source venv/bin/activate   # Mac/Linux
 # or: venv\Scripts\activate  # Windows
 
-pip install -r requirements.txt
+# installs the app package itself (editable) + shared/base deps
+pip install -e .
+```
+
+Then install the extra deps for the mode you're running:
+
+```bash
+# local (Ollama) mode
+pip install -r requirements/local.txt
+
+# AWS (Bedrock) mode
+pip install -r requirements/aws.txt
 ```
 
 ---
@@ -56,7 +67,7 @@ PROVIDER=ollama
 ollama serve
 
 # Terminal 2
-python bot.py
+python -m app.bots.bot_local
 ```
 
 ---
@@ -94,37 +105,18 @@ BEDROCK_LLM_MODEL=amazon.nova-lite-v1:0
 BEDROCK_EMBED_MODEL=cohere.embed-multilingual-v3
 ```
 
-### Step 4 — Deploy to EC2 (Free Tier)
+### Step 4 — Deploy to ECS (Free Tier)
+
+Refer to infra/AWS_DEPLOYMENT.md
+
+### Alternative: run via Docker
 
 ```bash
-# 1. Launch EC2 t3.micro with Amazon Linux 2023 or Ubuntu 24.04
-#    (t3.micro = 1 GB RAM, enough since no Ollama)
-
-# 2. SSH into your instance
-ssh -i key.pem ec2-user@your-ec2-ip
-
-# 3. Install Python
-sudo apt update && sudo apt install -y python3-pip python3-venv git
-
-# 4. Clone / upload your project
-git clone https://github.com/you/ua_rag_bot.git
-cd ua_rag_bot
-
-# 5. Setup
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-
-# 6. Create .env with PROVIDER=bedrock
-nano .env
-
-# 7. Run with auto-restart
-pip install supervisor
-# or simply use: nohup python bot.py &
-python bot.py
+docker build -f infra/Dockerfile.cloud -t youtube-rag-bot .
+docker run --env-file .env youtube-rag-bot
 ```
 
-### Keep the bot alive with systemd
+### Keep the bot alive with systemd (no Docker)
 
 ```bash
 sudo nano /etc/systemd/system/ytbot.service
@@ -137,11 +129,11 @@ After=network.target
 
 [Service]
 User=ubuntu
-WorkingDirectory=/home/ubuntu/ua_rag_bot
-ExecStart=/home/ubuntu/ua_rag_bot/venv/bin/python bot.py
+WorkingDirectory=/home/ubuntu/youtube_rag_bot
+ExecStart=/home/ubuntu/youtube_rag_bot/venv/bin/python -m app.bots.bot_aws
 Restart=always
 RestartSec=10
-EnvironmentFile=/home/ubuntu/ua_rag_bot/.env
+EnvironmentFile=/home/ubuntu/youtube_rag_bot/.env
 
 [Install]
 WantedBy=multi-user.target
@@ -180,13 +172,49 @@ The $200 AWS credit covers ~200,000 questions before you pay anything.
 ## 📁 Project structure
 
 ```
-ua_rag_bot/
-├── bot.py            # main file — all logic
-├── requirements.txt
-├── .env              # your secrets (never commit this)
-├── .env.example      # template
+youtube_rag_bot/
 ├── README.md
-└── chroma_db/        # vector store (auto-created)
+├── pyproject.toml          # editable install: pip install -e .
+├── .env                    # your secrets (never commit this)
+├── .env.example            # template
+├── .gitignore
+│
+├── requirements/
+│   ├── base.txt            # shared deps
+│   ├── local.txt           # Ollama-mode extras
+│   └── aws.txt             # Bedrock-mode extras
+│
+├── infra/
+│   ├── Dockerfile.cloud
+│   └── .dockerignore
+│
+├── src/
+│   └── app/
+│       ├── bots/
+│       │   ├── bot_local.py    # entrypoint: PROVIDER=ollama / PROVIDER=bedrock
+│       │   └── bot_aws.py      # entrypoint: aws
+│       │
+│       ├── rag/                # shared by both bots
+│       │   ├── rag_graph.py    # langgraph structure
+│       │   ├── router.py       # off_topic / from_db / from_context routing
+│       │   ├── chunking.py     # transcript chunking logic
+│       │   ├── hybrid_search.py# vector + BM25 retrieval
+│       │   └── reranker.py     # 20 chunks → top 4
+│       │
+│       ├── storage/
+│       │   ├── s3_transcript_store.py   # S3 get/put
+│       │   ├── vectorstore_aws.py       # OpenSearch get/put
+│       │   └── sqs_transcript_queue.py  # SQS queue
+│       │
+│       └── watcher/
+│           └── local_watcher.py   # queue → S3 writer (used by bot_aws)
+│
+├── tests/
+│   └── test_vectorstore_aws.py
+│
+└── data/                    # gitignored, local caches
+    ├── chroma_db/
+    └── bm25_cache/
 ```
 
 ---
@@ -211,3 +239,7 @@ ollama serve
 **Slow on CPU (Ollama)**
 - Normal: 5–15 sec/response
 - Switch to lighter model: `OLLAMA_MODEL=llama3.2:3b`
+
+**`ModuleNotFoundError: No module named 'app'`**
+- Make sure you ran `pip install -e .` from the project root (the folder containing `pyproject.toml`) while your venv was active.
+- Re-run `pip install -e .` only after adding new subpackages/folders under `src/app/` — everyday edits to existing files take effect immediately without reinstalling.

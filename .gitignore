@@ -2,7 +2,10 @@
 venv
 *.ipynb
 chroma_db
-ytbot-key.pem
+*.pem
 __pycache__
 bm25_cache
 data
+app.egg-info
+ecs-task-definition.json
+.env.cloud
