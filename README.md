@@ -105,7 +105,7 @@ BEDROCK_LLM_MODEL=amazon.nova-lite-v1:0
 BEDROCK_EMBED_MODEL=cohere.embed-multilingual-v3
 ```
 
-## 🟠 Mode 3: AWS Bedrock (Production)
+## 🔴 Mode 3: AWS Bedrock (Production)
 
 Refer to [AWS Deployment Guide](infra/AWS_DEPLOYMENT.md)
 
