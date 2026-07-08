@@ -1,15 +1,15 @@
 # 🎬 YouTube RAG Telegram Bot
 
-Analyzes YouTube videos via transcripts. Supports two deployment modes via a single `.env` switch.
+Analyzes YouTube videos via transcripts. Supports two deployment modes via a single `.env` switch. For `bot_aws.py` default is bedrock
 
-| Mode | `PROVIDER=ollama` | `PROVIDER=bedrock and bot_aws.py` |
-|---|---|---|
-| **Where it runs** | Your local machine | AWS EC2 (t3.micro) |
-| **LLM** | gemma3:4b via Ollama | Amazon Nova Lite |
-| **Embeddings** | nomic-embed-text | Cohere Embed Multilingual |
-| **Cost** | Free | ~$0 from credits, then pay-per-use |
-| **RAM needed** | 4+ GB (for Ollama) | 1 GB (EC2 t3.micro is enough) |
-| **Best for** | Local dev & testing | Production deployment |
+| Mode | `PROVIDER=ollama` | `PROVIDER=bedrock` | `bot_aws.py` |
+|---|---|---|---|
+| **Where it runs** | Your local machine | our local machine | AWS EC2 (t3.micro) |
+| **LLM** | gemma3:4b via Ollama | Amazon Nova Lite | Amazon Nova Lite |
+| **Embeddings** | nomic-embed-text | Cohere Embed Multilingual | Cohere Embed Multilingual |
+| **Cost** | Free | ~$0 from credits, then pay-per-use |  ~$0 from credits, then pay-per-use | 
+| **RAM needed** | 4+ GB (for Ollama) | 1 GB is enough | 1 GB (EC2 t3.micro is enough) |
+| **Best for** | Local dev & testing | Local dev (faster) | Production deployment |
 
 ---
 
@@ -72,7 +72,7 @@ python -m app.bots.bot_local
 
 ---
 
-## 🟠 Mode 2: AWS Bedrock (Production)
+## 🟠 Mode 2: Local with AWS Bedrock
 
 ### Step 1 — Create AWS account and enable Bedrock models
 
@@ -105,45 +105,9 @@ BEDROCK_LLM_MODEL=amazon.nova-lite-v1:0
 BEDROCK_EMBED_MODEL=cohere.embed-multilingual-v3
 ```
 
-### Step 4 — Deploy to ECS (Free Tier)
+## 🟠 Mode 3: AWS Bedrock (Production)
 
-Refer to infra/AWS_DEPLOYMENT.md
-
-### Alternative: run via Docker
-
-```bash
-docker build -f infra/Dockerfile.cloud -t youtube-rag-bot .
-docker run --env-file .env youtube-rag-bot
-```
-
-### Keep the bot alive with systemd (no Docker)
-
-```bash
-sudo nano /etc/systemd/system/ytbot.service
-```
-
-```ini
-[Unit]
-Description=YouTube RAG Telegram Bot
-After=network.target
-
-[Service]
-User=ubuntu
-WorkingDirectory=/home/ubuntu/youtube_rag_bot
-ExecStart=/home/ubuntu/youtube_rag_bot/venv/bin/python -m app.bots.bot_aws
-Restart=always
-RestartSec=10
-EnvironmentFile=/home/ubuntu/youtube_rag_bot/.env
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-sudo systemctl enable ytbot
-sudo systemctl start ytbot
-sudo systemctl status ytbot
-```
+Refer to [AWS Deployment Guide](infra/AWS_DEPLOYMENT.md)
 
 ---
 
