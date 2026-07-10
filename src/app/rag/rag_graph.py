@@ -181,7 +181,7 @@ def make_classify_node(llm: BaseChatModel, prev_chunks_fn, history_fn):
         history = history_fn()
         route, reason = classify_question(
             state["question"], prev_chunks, llm, history=history,
-        )
+        ) if prev_chunks else (Route.FROM_DB, "No cached context available")
 
         if route == Route.FROM_CONTEXT and prev_chunks:
             # Format cached chunks as context right here
@@ -317,11 +317,15 @@ def _format_docs(docs: list[Document]) -> str:
         return "(no context)"
     parts = []
     for d in docs:
-        idx = d.metadata.get("chunk_idx", "?")
         label = d.metadata.get("timestamp_label")
-        link  = d.metadata.get("deep_link")
-        tag = f"[chunk {idx}{', ' + label if label else ''}]"
-        parts.append(f"{label}({link})\n{d.page_content}")
+        link = d.metadata.get("deep_link")
+        if label and link:
+            block = f"{label}({link})\n{d.page_content}"
+        elif label:
+            block = f"{label}\n{d.page_content}"
+        else:
+            block = d.page_content
+        parts.append(block)
     return "\n\n---\n\n".join(parts)
 
 
@@ -344,10 +348,7 @@ async def receive_question(update, context: ContextTypes.DEFAULT_TYPE):
     bot.py first (local dev) then bot_aws.py (AWS deployment) — both define
     the same ASK_URL, ASK_LANG, ASK_QUESTION = range(3) constants.
     """
-    try:
-        from app.bots.bot_local import ASK_QUESTION
-    except ImportError:
-        from app.bots.bot_aws import ASK_QUESTION
+    from app.bots.bot_core import ASK_QUESTION
 
     agent = context.user_data.get("agent")
     if not agent:
