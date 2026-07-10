@@ -95,6 +95,7 @@ SIMILARITY_THR   = float(os.getenv("SIMILARITY_THR", 0.75))   # semantic only
 
 # Conversation states (language selection removed — handled automatically)
 ASK_URL, ASK_QUESTION = range(2)
+EMBEDDING_TEXT_MAX_LENGTH = 2048 # Cohere's multilingual embedding model has a 2048-token limit, so we should chunk transcripts into <= 2048 tokens before embedding.
 
 
 # ── Provider factory ────────────────────────────────────────────────────────────
@@ -106,8 +107,8 @@ def build_llm() -> BaseChatModel:
         return ChatBedrockConverse(
             model=BEDROCK_LLM_MODEL,
             region_name=AWS_REGION,
-            temperature=0.3,
-            max_tokens=256,
+            temperature=0.1,
+            max_tokens=1024,
         )
     else:
         from langchain_ollama import ChatOllama
@@ -115,7 +116,7 @@ def build_llm() -> BaseChatModel:
         return ChatOllama(
             model=OLLAMA_MODEL,
             base_url=OLLAMA_BASE_URL,
-            temperature=0.3,
+            temperature=0.1,
             num_predict=256,
             num_thread=os.cpu_count(),
             keep_alive="30m"
@@ -166,17 +167,17 @@ def bm25_cache_path(video_id: str) -> str:
 
 
 SUMMARY_PROMPT = """You are given a YouTube video transcript.
-Write a concise summary 300 words covering:
+Write a concise summary less than 300 words covering:
 - The main topic and purpose of the video
 - Key points or arguments made
-- Any notable conclusions
-- Provide answer in the same language as the transcript.
+- Any notable conclusions.
+- Use the {lang} language for the summary.
 
 Transcript (may be truncated):
 {transcript}"""
 
 
-def generate_summary(text: str, llm: BaseChatModel) -> str:
+def generate_summary(text: str, llm: BaseChatModel, lang: str) -> str:
     """Generates a short summary of the full transcript using the LLM."""
     # Truncate by tokens (not raw characters) to stay within context limits.
     enc_tokens = count_tokens(text)
@@ -188,7 +189,7 @@ def generate_summary(text: str, llm: BaseChatModel) -> str:
         preview = text
     try:
         response = llm.invoke([
-            HumanMessage(content=SUMMARY_PROMPT.format(transcript=preview))
+            HumanMessage(content=SUMMARY_PROMPT.format(transcript=preview, lang=lang))
         ])
         return response.content
     except Exception as e:
@@ -226,10 +227,10 @@ def index_transcript(
         config=cfg,
     )
 
-    summary = generate_summary(text, llm)
+    summary = generate_summary(text, llm, lang)
     if summary:
         chunk_docs.append(Document(
-            page_content=summary,
+            page_content=summary[:EMBEDDING_TEXT_MAX_LENGTH],  # truncate to embedding model limit
             metadata={"video_id": video_id, "lang": lang,
                         "chunk_idx": -1, "type": "summary"},
         ))
@@ -247,7 +248,7 @@ def index_transcript(
     except Exception as e:
         logger.warning(f"⚠️ BM25 index build failed ({e}); hybrid search will fall back to vector-only")
 
-    return vs, n_docs
+    return vs, n_docs, summary
 
 
 def load_bm25_index(video_id: str) -> Optional[BM25Index]:
@@ -346,8 +347,13 @@ async def receive_url(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             f"{status}\n📊 Tokens: {total_tokens}\n⏳ Indexing into vector store..."
         )
 
+        await safe_update(
+            status_msg,
+            f"Transcription:\n{transcript_text[:200]}..."
+        )
+
         llm = context.bot_data["llm"]
-        vectorstore, n_chunks = index_transcript(
+        vectorstore, n_chunks, summary = index_transcript(
             video_id, transcript_text, lang, llm, segments=segments
         )
 
@@ -364,6 +370,12 @@ async def receive_url(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             f"💬 Ask me anything about the video.\n"
             f"New video → /start  |  Exit → /cancel"
         )
+
+        await safe_update(
+            status_msg,
+            f"Summary:\n {summary if summary else 'No summary available.'}"
+        )
+
         return ASK_QUESTION
 
     except TranscriptsDisabled:
