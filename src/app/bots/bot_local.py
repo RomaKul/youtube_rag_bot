@@ -59,6 +59,7 @@ from app.rag.chunking import (
 from app.rag.router import load_retrieved_chunks, load_history
 from app.rag.hybrid_search import BM25Index
 from app.rag.rag_graph import build_routed_rag_graph, receive_question
+from app.watcher.local_watcher import fetch_transcript_locally as get_transcript
 
 load_dotenv()
 
@@ -143,40 +144,6 @@ def build_embeddings() -> Embeddings:
 def extract_video_id(url: str) -> Optional[str]:
     match = re.search(r"(?:v=|youtu\.be/|embed/|shorts/)([A-Za-z0-9_-]{11})", url)
     return match.group(1) if match else None
-
-
-def get_transcript(video_id: str) -> tuple[str, list[Segment], str, str]:
-    """
-    Downloads a transcript for the video, automatically choosing a language.
-    Prefers a manually created transcript (i.e. provided by the uploader,
-    not auto-generated) if one exists in any language; otherwise falls back
-    to an auto-generated transcript.
-
-    Returns (full_text, segments, status_message, lang_code).
-    """
-    api = YouTubeTranscriptApi()
-
-    try:
-        transcript_list = list(api.list(video_id))
-    except TranscriptsDisabled:
-        raise TranscriptsDisabled(video_id)
-
-    if not transcript_list:
-        raise NoTranscriptFound(video_id, [], {})
-
-    manual = [t for t in transcript_list if not t.is_generated]
-    chosen = manual[0] if manual else transcript_list[0]
-
-    fetched   = chosen.fetch()
-    segments  = segments_from_fetched(fetched)
-    full_text = " ".join(s.text for s in segments)
-
-    kind = "manual" if not chosen.is_generated else "auto-generated"
-    status = (
-        f"✅ Transcript loaded ({len(segments)} segments) — "
-        f"language: {chosen.language} [{chosen.language_code}], {kind}"
-    )
-    return full_text, segments, status, chosen.language_code
 
 
 # ── Vector store ───────────────────────────────────────────────────────────────
@@ -371,7 +338,7 @@ async def receive_url(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     )
 
     try:
-        transcript_text, segments, status, lang = get_transcript(video_id)
+        transcript_text, segments, kind, lang, status = get_transcript(video_id)
         total_tokens = count_tokens(transcript_text)
 
         await safe_update(

@@ -64,7 +64,7 @@ def fetch_transcript_locally(video_id: str) -> tuple[str, list[Segment], str, st
     whichever language exists; falls back to the first auto-generated one
     otherwise. No language needs to be requested or configured.
 
-    Returns (full_text, segments, note, lang_code).
+    Returns (full_text, segments, kind, lang_code, status).
     """
     api = YouTubeTranscriptApi()
 
@@ -79,8 +79,12 @@ def fetch_transcript_locally(video_id: str) -> tuple[str, list[Segment], str, st
     segments = segments_from_fetched(fetched)
     full_text = " ".join(s.text for s in segments)
 
-    note = "manual" if not chosen.is_generated else "auto-generated"
-    return full_text, segments, note, chosen.language_code
+    kind = "manual" if not chosen.is_generated else "auto-generated"
+    status = (
+        f"✅ Transcript loaded ({len(segments)} segments) — "
+        f"language: {chosen.language} [{chosen.language_code}], {kind}"
+    )    
+    return full_text, segments, kind, chosen.language_code, status
 
 
 def handle_job(video_id: str) -> None:
@@ -91,7 +95,7 @@ def handle_job(video_id: str) -> None:
 
     logger.info(f"[watcher] Fetching {video_id} locally (auto-detecting language)…")
     try:
-        text, segments, note, lang_code = fetch_transcript_locally(video_id)
+        text, segments, kind, lang_code = fetch_transcript_locally(video_id)
     except TranscriptsDisabled:
         logger.warning(f"[watcher] Transcripts disabled for {video_id}")
         notify_result(video_id, status="error", error="transcripts_disabled")
@@ -106,7 +110,7 @@ def handle_job(video_id: str) -> None:
         return
 
     put_transcript(video_id, text, segments, lang_code=lang_code)
-    logger.info(f"[watcher] Done: {video_id} ({note}, lang={lang_code}, {len(text)} chars)")
+    logger.info(f"[watcher] Done: {video_id} ({kind}, lang={lang_code}, {len(text)} chars)")
     notify_result(video_id, status="ok")
 
 
