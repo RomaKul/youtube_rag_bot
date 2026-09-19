@@ -1,0 +1,102 @@
+{
+  "_comment": "3 videos x 10 questions. Question types: factual (3), summary (2), multi_hop (2), follow_up (2), off_topic (1). A follow_up question MUST set follow_up_to to the id of the question it follows, and must come directly after it — that is what exercises the router.",
+  "videos": [
+    {
+      "video_id": "V1",
+      "url": "https://www.youtube.com/watch?v=REPLACE_ME",
+      "title": "English lecture, clean auto-captions",
+      "language": "en",
+      "minutes": 15,
+      "questions": [
+        {
+          "id": "V1-q1",
+          "type": "factual",
+          "question": "What figure did the speaker give for X?",
+          "ground_truth": "The speaker said X is 42 per cent.",
+          "evidence": "quote or timecode from the transcript that proves the ground truth"
+        },
+        {
+          "id": "V1-q2",
+          "type": "factual",
+          "question": "",
+          "ground_truth": "",
+          "evidence": ""
+        },
+        {
+          "id": "V1-q3",
+          "type": "factual",
+          "question": "",
+          "ground_truth": "",
+          "evidence": ""
+        },
+        {
+          "id": "V1-q4",
+          "type": "summary",
+          "question": "What is the main argument of the video?",
+          "ground_truth": "",
+          "evidence": ""
+        },
+        {
+          "id": "V1-q5",
+          "type": "summary",
+          "question": "",
+          "ground_truth": "",
+          "evidence": ""
+        },
+        {
+          "id": "V1-q6",
+          "type": "multi_hop",
+          "question": "How does the point made at the start relate to the example given near the end?",
+          "ground_truth": "",
+          "evidence": "must require at least two distant transcript fragments"
+        },
+        {
+          "id": "V1-q7",
+          "type": "multi_hop",
+          "question": "",
+          "ground_truth": "",
+          "evidence": ""
+        },
+        {
+          "id": "V1-q8",
+          "type": "follow_up",
+          "follow_up_to": "V1-q7",
+          "question": "Can you say more about that?",
+          "ground_truth": "",
+          "evidence": "answerable from the context retrieved for q7 — this is the from_context branch"
+        },
+        {
+          "id": "V1-q9",
+          "type": "follow_up",
+          "follow_up_to": "V1-q8",
+          "question": "Why?",
+          "ground_truth": "",
+          "evidence": ""
+        },
+        {
+          "id": "V1-q10",
+          "type": "off_topic",
+          "question": "What is the capital of Australia?",
+          "ground_truth": "The video does not discuss this; the system should refuse or state that the transcript contains no such information.",
+          "evidence": "not in the transcript"
+        }
+      ]
+    },
+    {
+      "video_id": "V2",
+      "url": "https://www.youtube.com/watch?v=REPLACE_ME",
+      "title": "Ukrainian video, tests multilingual retrieval",
+      "language": "uk",
+      "minutes": 20,
+      "questions": []
+    },
+    {
+      "video_id": "V3",
+      "url": "https://www.youtube.com/watch?v=REPLACE_ME",
+      "title": "Long podcast or interview, tests scaling",
+      "language": "en",
+      "minutes": 55,
+      "questions": []
+    }
+  ]
+}
