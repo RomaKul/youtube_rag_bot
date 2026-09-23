@@ -60,17 +60,6 @@ inside `adapters.py`.
    latency comparison is meaningless. Record the machine's CPU, RAM and whether
    a GPU was used — that goes in Materials and Methods.
 
-## Before you start, fix two things in the project
-
-- **`SIMILARITY_K=2` is too low for reranking.** The harness sets
-  `candidates_k=20` per retriever and `final_k=4`; make sure your retrievers
-  actually honour it, otherwise E2-4 reranks two chunks and measures noise.
-- **The router prompt declares two routes, the README claims three.** Either add
-  the `off_topic` branch or drop it from the README — the article must describe
-  what the code does. The `off_topic` question in the test set assumes the
-  system handles it somehow; if there is no such branch, report how the system
-  behaves anyway (it is a legitimate finding).
-
 ## `--repeats`
 
 LLM answers vary between identical runs. `--repeats 3` gives you a standard

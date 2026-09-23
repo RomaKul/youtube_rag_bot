@@ -160,7 +160,7 @@ youtube_rag_bot/
 │       │
 │       ├── rag/                # shared by both bots
 │       │   ├── rag_graph.py    # langgraph structure
-│       │   ├── router.py       # off_topic / from_db / from_context routing
+│       │   ├── router.py       # from_db / from_context routing
 │       │   ├── chunking.py     # transcript chunking logic
 │       │   ├── hybrid_search.py# vector + BM25 retrieval
 │       │   └── reranker.py     # 20 chunks → top 4

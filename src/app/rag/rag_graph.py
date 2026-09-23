@@ -5,7 +5,7 @@ Flow:
                         ┌─────────────┐
                         │   classify  │  (lightweight LLM call, history-aware)
                         └──────┬──────┘
-               ┌───────────────┼──────────────┐
+               ┌───────────────┼──────|X|──────┐
           from_context      from_db        off_topic
                │               │               │
                ▼               ▼               ▼
@@ -14,7 +14,7 @@ Flow:
                │            → rerank →
                │            generate]
                │               │               │
-               └───────────────┴───────────────┘
+               └───────────────┴──────|X|──────┘
                                 │
                               [END]
 
@@ -62,6 +62,7 @@ FIXED vs. original:
 from __future__ import annotations
 
 import logging
+import os
 from typing import (
     TYPE_CHECKING,
     Callable,
@@ -87,8 +88,8 @@ from app.rag.reranker import rerank
 
 logger = logging.getLogger(__name__)
 
-SIMILARITY_K   = 4    # final number of chunks fed to the LLM
-CANDIDATE_K    = 20   # candidates pulled before re-ranking down to SIMILARITY_K
+SIMILARITY_K   = int(os.getenv("SIMILARITY_K", 10))   # final number of chunks fed to the LLM
+CANDIDATE_K    = int(os.getenv("CANDIDATE_K", 4))    # candidates pulled before re-ranking down to SIMILARITY_K
 
 
 if TYPE_CHECKING:
@@ -164,7 +165,7 @@ class RAGState(TypedDict):
     answer:           str
     video_id:         str
     route:            str          # Route enum value (string)
-    retrieved_docs:   list[Document]   # docs found in this turn (empty for context/off-topic)
+    retrieved_docs:   list[Document]   # docs found in this turn (empty for context)
     history:          list[tuple[str, str]]   # recent (question, answer) turns
 
 
@@ -193,7 +194,7 @@ def make_classify_node(llm: BaseChatModel, prev_chunks_fn, history_fn):
         elif route == Route.FROM_CONTEXT:
             route = Route.FROM_DB
 
-        # FROM_DB and OFF_TOPIC — context filled in later nodes
+        # FROM_DB — context filled in later nodes
         return {**state, "route": route.value, "context": "", "retrieved_docs": [],
                 "history": history}
 

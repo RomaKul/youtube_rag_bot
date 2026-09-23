@@ -309,7 +309,7 @@ Save as `infra/ecs-task-definition.json` — replace all `<PLACEHOLDERS>`:
         {"name": "BEDROCK_EMBED_MODEL",    "value": "cohere.embed-multilingual-v3"},
         {"name": "CHUNK_STRATEGY",         "value": "timestamp"},
         {"name": "CHUNK_TOKENS",           "value": "300"},
-        {"name": "OVERLAP_SENTANCES",         "value": "1"},
+        {"name": "OVERLAP_SENTENCES",         "value": "1"},
         {"name": "TRANSCRIPT_WAIT_TIMEOUT_S", "value": "90"}
       ],
       "secrets": [
@@ -699,7 +699,7 @@ Means `pip install -e .` / `pip install .` didn't run in the image, or `pyprojec
 | `BEDROCK_EMBED_MODEL` | | `cohere.embed-multilingual-v3` | Embedding model ID |
 | `CHUNK_STRATEGY` | | `timestamp` | `timestamp`, `sentence`, or `semantic` |
 | `CHUNK_TOKENS` | | `300` | Target tokens per chunk |
-| `OVERLAP_SENTANCES` | | `1` | Overlap between chunks |
+| `OVERLAP_SENTENCES` | | `1` | Overlap between chunks |
 | `TRANSCRIPT_WAIT_TIMEOUT_S` | | `90` | Seconds to wait for local watcher |
 | `USER_QUOTA_BYTES` | | `1073741824` | Per-user storage quota (default 1 GB) |
 

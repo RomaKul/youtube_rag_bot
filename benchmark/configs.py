@@ -25,14 +25,14 @@ class RunConfig:
     # --- chunking -------------------------------------------------------
     chunk_strategy: Literal["timestamp", "sentence", "semantic"] = "timestamp"
     chunk_tokens: int = 300
-    overlap_tokens: int = 30
+    overlap_sentences: int = 1
     similarity_thr: float = 0.75
 
     # --- retrieval ------------------------------------------------------
     # "vector" | "bm25" | "hybrid" | "hybrid_rerank"
     retrieval: str = "hybrid_rerank"
-    candidates_k: int = 20   # chunks pulled by each retriever before fusion
-    final_k: int = 4         # chunks that actually reach the LLM
+    similarity_k: int = 10   # chunks pulled by each retriever before fusion
+    retrieval_top_k: int = 4         # chunks that actually reach the LLM
 
     # --- generation -----------------------------------------------------
     provider: Literal["bedrock", "ollama"] = "bedrock"
@@ -53,23 +53,23 @@ class RunConfig:
 # ---------------------------------------------------------------------------
 # Fill these in after each experiment so the next one inherits the winner.
 # ---------------------------------------------------------------------------
-E1_WINNER = dict(chunk_strategy="timestamp", chunk_tokens=300, overlap_tokens=30)
-E2_WINNER = dict(retrieval="hybrid_rerank", candidates_k=20, final_k=4)
+E1_WINNER = dict(chunk_strategy="timestamp", chunk_tokens=300, overlap_sentences=1)
+E2_WINNER = dict(retrieval="hybrid_rerank", similarity_k=10, retrieval_top_k=4)
 
 
 # --- Experiment 1: chunking strategy ---------------------------------------
 E1 = [
-    RunConfig("E1-1", "E1", "timestamp 300/30",
-              chunk_strategy="timestamp", chunk_tokens=300, overlap_tokens=30,
+    RunConfig("E1-1", "E1", "timestamp 300/1",
+              chunk_strategy="timestamp", chunk_tokens=300, overlap_sentences=1,
               notes="baseline, current production default"),
-    RunConfig("E1-2", "E1", "timestamp 600/60",
-              chunk_strategy="timestamp", chunk_tokens=600, overlap_tokens=60,
-              notes="larger time window"),
-    RunConfig("E1-3", "E1", "sentence 300/30",
-              chunk_strategy="sentence", chunk_tokens=300, overlap_tokens=30,
+    # RunConfig("E1-2", "E1", "sentence 300/30",
+    #           chunk_strategy="sentence", chunk_tokens=300, overlap_sentences=30,
+    #           notes="token split"),
+    RunConfig("E1-3", "E1", "sentence 300/1",
+              chunk_strategy="sentence", chunk_tokens=300, overlap_sentences=1,
               notes="sentence-aware split, ignores timecodes"),
     RunConfig("E1-4", "E1", "semantic 300 (thr 0.75)",
-              chunk_strategy="semantic", chunk_tokens=300, overlap_tokens=0,
+              chunk_strategy="semantic", chunk_tokens=300, overlap_sentences=0,
               similarity_thr=0.75,
               notes="embedding-similarity merging"),
 ]
@@ -77,13 +77,13 @@ E1 = [
 # --- Experiment 2: retrieval scheme ----------------------------------------
 E2 = [
     RunConfig("E2-1", "E2", "dense only",
-              retrieval="vector", candidates_k=20, final_k=4, **E1_WINNER),
+              retrieval="vector", similarity_k=10, retrieval_top_k=4, **E1_WINNER),
     RunConfig("E2-2", "E2", "BM25 only",
-              retrieval="bm25", candidates_k=20, final_k=4, **E1_WINNER),
+              retrieval="bm25", similarity_k=10, retrieval_top_k=4, **E1_WINNER),
     RunConfig("E2-3", "E2", "hybrid RRF (k=60)",
-              retrieval="hybrid", candidates_k=20, final_k=4, **E1_WINNER),
+              retrieval="hybrid", similarity_k=10, retrieval_top_k=4, **E1_WINNER),
     RunConfig("E2-4", "E2", "hybrid RRF + rerank",
-              retrieval="hybrid_rerank", candidates_k=20, final_k=4, **E1_WINNER),
+              retrieval="hybrid_rerank", similarity_k=10, retrieval_top_k=4, **E1_WINNER),
 ]
 
 # --- Experiment 3: provider x router ---------------------------------------

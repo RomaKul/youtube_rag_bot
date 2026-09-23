@@ -10,3 +10,4 @@ app.egg-info
 ecs-task-definition.json
 .env.cloud
 .vscode
+results

@@ -81,7 +81,7 @@ BEDROCK_EMBED_MODEL  = os.getenv("BEDROCK_EMBED_MODEL", "cohere.embed-multilingu
 
 CHUNK_STRATEGY   = os.getenv("CHUNK_STRATEGY", "timestamp")
 CHUNK_TOKENS     = int(os.getenv("CHUNK_TOKENS",    300))
-OVERLAP_SENTANCES   = int(os.getenv("OVERLAP_SENTANCES",   1))
+OVERLAP_SENTENCES   = int(os.getenv("OVERLAP_SENTENCES",   1))
 SIMILARITY_THR   = float(os.getenv("SIMILARITY_THR", 0.75))
 
 TRANSCRIPT_WAIT_TIMEOUT_S = int(os.getenv("TRANSCRIPT_WAIT_TIMEOUT_S", 90))
@@ -175,7 +175,7 @@ def index_transcript_aws(video_id: str, text: str, lang: str, llm: BaseChatModel
 
     cfg = ChunkingConfig(
         strategy=CHUNK_STRATEGY, chunk_tokens=CHUNK_TOKENS,
-        overlap_sentences=OVERLAP_SENTANCES, similarity_threshold=SIMILARITY_THR,
+        overlap_sentences=OVERLAP_SENTENCES, similarity_threshold=SIMILARITY_THR,
     )
     chunk_docs = build_documents(
         video_id=video_id, lang=lang, text=text, segments=segments,

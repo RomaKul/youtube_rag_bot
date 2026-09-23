@@ -20,12 +20,13 @@ Usage
     index.save(f"./bm25_cache/{video_id}.pkl")    # persist alongside Chroma
     ...
     index = BM25Index.load(f"./bm25_cache/{video_id}.pkl")
-    docs = hybrid_search(query, vectorstore, index, k=10)
+    docs = hybrid_search(query, vectorstore, index, k=SIMILARITY_K)
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import pickle
 import re
 from pathlib import Path
@@ -36,6 +37,9 @@ from langchain_core.documents import Document
 logger = logging.getLogger(__name__)
 
 _TOKEN_RE = re.compile(r"[A-Za-zА-Яа-яЇїІіЄєҐґ0-9]+")
+
+CANDIDATE_K = int(os.getenv("CANDIDATE_K", 4))
+SIMILARITY_K = int(os.getenv("SIMILARITY_K", 10))
 
 
 if TYPE_CHECKING:
@@ -73,7 +77,7 @@ class BM25Index:
         logger.info(f"[bm25] Building index over {len(chunk_docs)} chunks")
         return cls(chunk_docs)
 
-    def search(self, query: str, k: int = 10) -> list[tuple[Document, float]]:
+    def search(self, query: str, k: int = SIMILARITY_K) -> list[tuple[Document, float]]:
         if not self._bm25 or not self.docs:
             return []
         scores = self._bm25.get_scores(_tokenize(query))
@@ -126,9 +130,9 @@ def hybrid_search(
     query: str,
     vectorstore: VectorStoreLike,
     bm25_index: Optional[BM25Index],
-    k: int = 10,
-    vector_k: Optional[int] = None,
-    bm25_k: Optional[int] = None,
+    k: int = CANDIDATE_K,
+    vector_k: int = SIMILARITY_K,
+    bm25_k: int = SIMILARITY_K,
 ) -> list[Document]:
     """
     Runs vector similarity search and BM25 search in parallel, fuses with RRF,
@@ -137,8 +141,6 @@ def hybrid_search(
     Falls back to pure vector search if no BM25 index is available (e.g. it
     failed to build, or rank_bm25 isn't installed) — hybrid degrades gracefully.
     """
-    vector_k = vector_k or max(k, 10)
-    bm25_k = bm25_k or max(k, 10)
 
     vector_hits = vectorstore.similarity_search(query, k=vector_k)
 

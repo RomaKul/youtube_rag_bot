@@ -75,7 +75,8 @@ PROVIDER       = os.getenv("PROVIDER", "ollama").lower()  # "ollama" | "bedrock"
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHROMA_DIR     = os.getenv("CHROMA_DIR", "./data/chroma_db")
 BM25_DIR       = os.getenv("BM25_DIR", "./data/bm25_cache")
-SIMILARITY_K   = int(os.getenv("SIMILARITY_K", 4))
+SIMILARITY_K   = int(os.getenv("SIMILARITY_K", 10))
+RETRIEVAL_TOP_K = int(os.getenv("RETRIEVAL_TOP_K", 4))
 
 # Ollama settings (used when PROVIDER=ollama)
 OLLAMA_MODEL    = os.getenv("OLLAMA_MODEL",    "gemma3:4b")
@@ -90,7 +91,8 @@ BEDROCK_EMBED_MODEL   = os.getenv("BEDROCK_EMBED_MODEL", "cohere.embed-multiling
 # Chunking (configurable via .env)
 CHUNK_STRATEGY   = os.getenv("CHUNK_STRATEGY", "timestamp")   # sentence | timestamp | semantic
 CHUNK_TOKENS     = int(os.getenv("CHUNK_TOKENS",    300))
-OVERLAP_SENTANCES   = int(os.getenv("OVERLAP_SENTANCES",   1))
+SPLIT_SENTENCES   = bool(os.getenv("SPLIT_SENTENCES",   1))  
+OVERLAP_SENTENCES   = int(os.getenv("OVERLAP_SENTENCES",   1))
 SIMILARITY_THR   = float(os.getenv("SIMILARITY_THR", 0.75))   # semantic only
 
 # Conversation states (language selection removed — handled automatically)
@@ -167,7 +169,7 @@ def bm25_cache_path(video_id: str) -> str:
 
 
 SUMMARY_PROMPT = """You are given a YouTube video transcript.
-Write a concise summary less than 300 words covering:
+Write a concise summary less than 300 tokens covering:
 - The main topic and purpose of the video
 - Key points or arguments made
 - Any notable conclusions.
@@ -212,7 +214,8 @@ def index_transcript(
     cfg = ChunkingConfig(
         strategy=CHUNK_STRATEGY,
         chunk_tokens=CHUNK_TOKENS,
-        overlap_sentences=OVERLAP_SENTANCES,
+        split_sentences=SPLIT_SENTENCES,
+        overlap_sentences=OVERLAP_SENTENCES,
         similarity_threshold=SIMILARITY_THR,
     )
 
@@ -324,7 +327,7 @@ async def receive_url(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             f"✅ Video already indexed – using existing data.\n"
             f"📦 {n_chunks} chunks\n"
             f"🤖 Provider: {'AWS Bedrock' if PROVIDER == 'bedrock' else 'Ollama (local)'}\n"
-            f"✂️ Chunking: {CHUNK_STRATEGY}  ({CHUNK_TOKENS} tok, {OVERLAP_SENTANCES} overlap)\n"
+            f"✂️ Chunking: {CHUNK_STRATEGY}  ({CHUNK_TOKENS} tok, {OVERLAP_SENTENCES} overlap)\n"
             f"🔎 Retrieval: hybrid (vector + BM25) + cross-encoder rerank\n\n"
             f"💬 Ask me anything about the video.\n"
             f"New video → /start  |  Exit → /cancel",
@@ -363,9 +366,9 @@ async def receive_url(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             status_msg,
             f"✅ Video indexed!\n"
             f"🌐 Transcript language: {lang}\n"
-            f"📦 {n_chunks} chunks (~{CHUNK_TOKENS} tokens, {OVERLAP_SENTANCES}-sentence overlap)\n"
+            f"📦 {n_chunks} chunks (~{CHUNK_TOKENS} tokens, {OVERLAP_SENTENCES}-sentence overlap)\n"
             f"🤖 Provider: {'AWS Bedrock' if PROVIDER == 'bedrock' else 'Ollama (local)'}\n"
-            f"✂️ Chunking: {CHUNK_STRATEGY}  ({CHUNK_TOKENS} tok, {OVERLAP_SENTANCES} overlap)\n"
+            f"✂️ Chunking: {CHUNK_STRATEGY}  ({CHUNK_TOKENS} tok, {OVERLAP_SENTENCES} overlap)\n"
             f"🔎 Retrieval: hybrid (vector + BM25) + cross-encoder rerank\n\n"
             f"💬 Ask me anything about the video.\n"
             f"New video → /start  |  Exit → /cancel"

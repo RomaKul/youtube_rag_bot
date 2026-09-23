@@ -1,0 +1,671 @@
+{
+  "_comment": "7 video(s) x 10 questions. Question types: factual (3), summary (2), multi_hop (2), follow_up (2), off_topic (1). A follow_up question MUST set follow_up_to to the id of the question it follows, and must come directly after it — that is what exercises the router. GENERATED, NOT YET MANUALLY VERIFIED — see the review checklist below.",
+  "videos": [
+
+    {
+      "video_id": "dvvOi_nUCRM",
+      "url": "https://youtu.be/dvvOi_nUCRM",
+      "title": "Black Holes and Bangs - Chris Lintott",
+      "language": "en",
+      "minutes": 1,
+      "questions": [
+        {
+          "id": "dvvOi_nUCRM-q1",
+          "type": "factual",
+          "follow_up_to": null,
+          "question": "Who was the person who proved that relativity is real?",
+          "ground_truth": "Edington proved that relativity is real.",
+          "evidence": "{ \"Edington\": [\"Edington who was somebody who grasped really quickly that relativity was serious that it was it was worth taking serious it was worth frankly the mathematical grind of understanding the techniques that you used to solve these equations but but he was also an experimentalist and so this is why this is such an important result so you have to realize the context to begin with because this is a year after the end of the first world war Einstein's associated with there sses was working in Germany and then you have a a New Zealand British expedition to go and prove a German right and Newton wrong as it was seen at the time it was an astounding thing to do and so what you look for is we know where these stars are in the night sky and the prediction is that you can predict very precisely how much they move um if you put the sun in the way but normally when the sun's in the way you can't see them so you need an eclipse and they sent um two teams one to Brazil one to the island of prpe um and this is a simulation this isn't the real the Stars here are not in the real image um but they managed to show that there was this deflection and they showed at the time to their satisfaction that it was the amount that Einstein had predicted and Edington uh was supposed to give a a lecture about this but got drunk with friends at the Royal Astronomical Society and in poetry announced his results the night before he said oh leave the wise our measures to collate like Rays when near the sun do not go straight I regret to inform you there's another six verses that I'll SP so so this was the point where people thought that gr had been proved and then Edington um spends a lot of his time trying to to disprove its consequences so he spends a lot of his time trying to show that um a lot of the weirdness of general relativity um the bending not the bending of light but but sort of the the fact fact it it destroys the idea of a single time scale in the universe and so on so so he he then goes off and does his own thing but he's he's the person who proves and makes his reputation by proving that relativity is real to his satisfaction okay\"] }"
+        },
+        {
+          "id": "dvvOi_nUCRM-q2",
+          "type": "factual",
+          "follow_up_to": null,
+          "question": "What is the mass of the black hole at the center of the Milky Way?",
+          "ground_truth": "The black hole at the center of the Milky Way is 4 million times the mass of the Sun.",
+          "evidence": "{ \"black hole at the center of the Milky Way\": [\"the one at the center of the Milky Way is 4 million times the mass of the Sun\"] }"
+        },
+        {
+          "id": "dvvOi_nUCRM-q3",
+          "type": "summary",
+          "follow_up_to": null,
+          "question": "What are the three theories behind the creation of supermassive black holes?",
+          "ground_truth": "The three theories are: bypassing the star, the first generation of stars being very massive, and theorists having fun with various ideas.",
+          "evidence": "{ \"three theories\": [\"there's three types of answer one is that we bypass the star somehow that in the early Universe gas is dense enough that it collapses and forms a black hole straight away so nice answer but there's no evidence that that happens second one is there's something weird about the star so the first generation is Stars may have been very massive maybe something about them means you can form a very big black hole very early um and the third one is my current favorite which is theorists having fun so I've heard talks about everything from Dark Matter annihilating to novel forms of star to um strange Dynamics basically any Theory anyone can come up with over coffee has been written up as a paper in case it's right so which is another way of saying that we don't know\"] }"
+        },
+        {
+          "id": "dvvOi_nUCRM-q4",
+          "type": "summary",
+          "follow_up_to": null,
+          "question": "How do astronomers differentiate between stars revolving around each other and black holes?",
+          "ground_truth": "Astronomers differentiate between stars revolving around each other and black holes by observing the real data of stars' positions and colors, and identifying the invisible object they are orbiting, which is the black hole.",
+          "evidence": "{ \"differentiate between stars and black holes\": [\"these are are the real positions of these stars that are measured and we know they're stars because they Shine Like Stars they look like stars they have the color of stars they're kind of interesting Stars they're very massive and very young and so this is real data and then the thing in the middle which you can't see that's where the black hole is so we can see that they're orbiting something that's invisible in these images and that's the black hole\"] }"
+        },
+        {
+          "id": "dvvOi_nUCRM-q5",
+          "type": "multi_hop",
+          "follow_up_to": null,
+          "question": "What is the difference between the collision of black holes and neutron stars in terms of time scale?",
+          "ground_truth": "The collision of black holes is really fast, while the spiral in of neutron stars is much slower.",
+          "evidence": "{ \"black hole collision\": [\"black coal collagens which are really fast\"], \"neutron star spiral in\": [\"the spiral in is much slower\"] }"
+        },
+        {
+          "id": "dvvOi_nUCRM-q6",
+          "type": "follow_up",
+          "follow_up_to": "dvvOi_nUCRM-q5",
+          "question": "Can you say more about the spiral in of neutron stars?",
+          "ground_truth": "The spiral in of neutron stars is much slower and takes about 100 seconds.",
+          "evidence": "{ \"neutron star spiral in\": [\"the spiral in is much slower and takes about 100 seconds\"] }"
+        },
+        {
+          "id": "dvvOi_nUCRM-q7",
+          "type": "multi_hop",
+          "follow_up_to": null,
+          "question": "What is the difference between the accretion disc of black holes and neutron stars?",
+          "ground_truth": "The accretion disc of black holes is observed when they are in binary systems with other stars, while the accretion disc of neutron stars is mainly observed when they are in binary systems with other stars.",
+          "evidence": "{ \"black hole accretion disc\": [\"we do see acution discs around neutral Stars mainly when they're in binary systems with other stars if you have a normal star and a neutron star and they're close together then the gravity of the neutral star will pull Material off the other star and form a disc around it so those are bright x-ray sources so lots of X-ray astronomers people using the successors to the X-ray instruments that I talked about study these things and the physics of that is is fascinating but a different nature\"], \"neutron star accretion disc\": [\"we do see acution discs around neutral Stars mainly when they're in binary systems with other stars if you have a normal star and a neutron star and they're close together then the gravity of the neutral star will pull Material off the other star and form a disc around it so those are bright x-ray sources so lots of X-ray astronomers people using the successors to the X-ray instruments that I talked about study these things and the physics of that is is fascinating but a different nature\"] }"
+        },
+        {
+          "id": "dvvOi_nUCRM-q8",
+          "type": "follow_up",
+          "follow_up_to": "dvvOi_nUCRM-q7",
+          "question": "What is the physics behind the accretion disc of neutron stars?",
+          "ground_truth": "The physics behind the accretion disc of neutron stars is fascinating and involves the gravity of the neutron star pulling material off the other star and forming a disc around it.",
+          "evidence": "{ \"neutron star accretion disc\": [\"the physics of that is is fascinating but a different nature\"] }"
+        },
+        {
+          "id": "dvvOi_nUCRM-q9",
+          "type": "off_topic",
+          "follow_up_to": null,
+          "question": "What is the latest theory behind the creation of chocolate teapots?",
+          "ground_truth": "The video does not cover the subject of chocolate teapots.",
+          "evidence": "{ \"chocolate teapots\": [\"either you should say well look it's possible that there's a chocolate teapot orbiting the Sun that's allowed by physics but we've never seen one so either you go well I should see one you know let's go and look for the chocolate teapots or you should say look if you're more theoretical person you say relativity tends to describe things that exist I would have made the same teapot argument about black holes in 1930 as I just about white holes so maybe we should think about looking for these things um I would be delighted to find one and even more delighted to discover it was a wormhole\"] }"
+        },
+        {
+          "id": "dvvOi_nUCRM-q10",
+          "type": "factual",
+          "follow_up_to": null,
+          "question": "What is the maximum mass of a neutron star?",
+          "ground_truth": "The maximum mass of a neutron star is about 2.5 to 3 solar masses.",
+          "evidence": "{ \"maximum mass of a neutron star\": [\"there's a maximum mass of a neutron star that you should be able to have um it's somewhere about 2 and a half to three solar masses\"] }"
+        }
+      ]
+    },
+    {
+      "video_id": "rUQHPm7xfpY",
+      "url": "https://www.youtube.com/watch?v=rUQHPm7xfpY",
+      "title": "A 300,000-Year History of Human Evolution - Robin May",
+      "language": "en",
+      "minutes": 1,
+      "questions": [
+        {
+          "id": "rUQHPm7xfpY-q1",
+          "type": "factual",
+          "follow_up_to": null,
+          "question": "What is the main focus of the Gresham College lecture?",
+          "ground_truth": "The main focus is on human evolution and understanding it through the lens of evolutionary biology.",
+          "evidence": "The transcript fragment and timecode that support it is: 'The Gresham College lecture that you're listening to right now is giving you knowledge and insight from one of the world's leading academic experts.' (0:04-0:09)"
+        },
+        {
+          "id": "rUQHPm7xfpY-q2",
+          "type": "factual",
+          "follow_up_to": null,
+          "question": "What is the primary factor that influences evolution according to the lecture?",
+          "ground_truth": "The primary factor that influences evolution is reproduction, specifically the impact on offspring's reproduction.",
+          "evidence": "The transcript fragment and timecode that support it is: 'So, um, so if I look around this hall, uh, for example, there are some people here who are going to be massively shaped by evolution because they're at the start of their potential reproductive journey.' (0:16-0:23)"
+        },
+        {
+          "id": "rUQHPm7xfpY-q3",
+          "type": "factual",
+          "follow_up_to": null,
+          "question": "What is the leading cause of infant mortality under five according to the WHO data mentioned in the lecture?",
+          "ground_truth": "The leading cause of infant mortality under five is infectious diseases.",
+          "evidence": "The transcript fragment and timecode that support it is: 'And if you look at that data, first of all, foremost, I think it's important to say this is actually a tragic indictment of where we are today because many many many of these things are preventable um and should not be causing infant mortality, but they are because of inequality and poverty and all the other things that go with it. That notwithstanding in evolutionary terms, if we look at these leading causes of death, the majority of them are infectious diseases.' (0:36-0:44)"
+        },
+        {
+          "id": "rUQHPm7xfpY-q4",
+          "type": "summary",
+          "follow_up_to": null,
+          "question": "How did the mating between Homo sapiens and Neanderthals impact modern human genomes?",
+          "ground_truth": "The mating between Homo sapiens and Neanderthals resulted in a blend of DNA, with some Neanderthal genes being retained due to their beneficial impact on survival and reproduction.",
+          "evidence": "The transcript fragment and timecode that support it is: 'When any two organisms mate and hopefully you might remember this from your school biology lessons. Um each of us carries two copies of each of our chromosomes. One inherited from our mom and one from our dad. When you produce sperm and eggs, those separate each sperm or egg getting one or the other. And then when you make somebody else, one of theirs comes together with one of yours and you get a new combination... And so what we see in modern human genomes is that roughly speaking, most of the chromosome, they're pretty random, except that it's pretty clear, I think, that here is a patch where we don't have any neandal DNA. Why is that? That must be the assumption is that's because whatever was on that chromosome from the was not helpful, was not good. um and has actually disadvantaged people carrying it in the sense that they have not reproduced as well as the rest of us and they have been lost from the population.' (0:52-1:03)"
+        },
+        {
+          "id": "rUQHPm7xfpY-q5",
+          "type": "summary",
+          "follow_up_to": null,
+          "question": "What is the significance of the transition from hunter-gatherer nomadic humans to urbanized, agricultural humans?",
+          "ground_truth": "The transition to agriculture allowed humans to stay in one place, leading to urbanization, increased population densities, and the domestication of animals, which had profound impacts on human evolution.",
+          "evidence": "The transcript fragment and timecode that support it is: 'So, here's the first one. Um, this obviously is wheat. This is a crop that we eat. I said just now that one of the things that happened when we moved to agriculture is we diminish the diversity of our diet... And thirdly, um we started to live much more closely with other species, not quite like this, but with other species, by domesticating livestock, we started to share our homes, literally share our homes, uh, with all sorts of species, goats, dogs, sheep, cows, so on so forth, and a whole bunch of species that we didn't intend, but they came anyway, rats, mice, etc., etc. And that mixing pot has had a really profound impact on the subsequent evolution of humans over the last 10,000 years.' (1:24-1:34)"
+        },
+        {
+          "id": "rUQHPm7xfpY-q6",
+          "type": "multi_hop",
+          "follow_up_to": "rUQHPm7xfpY-q5",
+          "question": "How did the transition to agriculture impact the nutritional profile of early humans?",
+          "ground_truth": "The transition to agriculture led to a diminished nutritional profile as the diversity of the diet decreased, resulting in a reliance on a small subset of crops.",
+          "evidence": "The transcript fragment and timecode that support it is: 'The second impact is that it allowed humans to start to achieve densities, population sizes that we'd never seen previously. Prior to this point in human history, we were very small groups of nomadic hunter gatherers that traveled around. And you couldn't get very big because you couldn't stay in one place. You couldn't sustain a big population. Now you're staying in one place. You're growing your own food. you can expand agriculture, you can get to high densities. And high densities are very important for society. Um they're also quite important for some bad things, most notably infectious diseases. And thirdly, um we started to live much more closely with other species, not quite like this, but with other species, by domesticating livestock, we started to share our homes, literally share our homes, uh, with all sorts of species, goats, dogs, sheep, cows, so on so forth, and a whole bunch of species that we didn't intend, but they came anyway, rats, mice, etc., etc. And that mixing pot has had a really profound impact on the subsequent evolution of humans over the last 10,000 years. And let me show you a few examples of that. So, here's the first one. Um, this obviously is wheat. This is a crop that we eat. I said just now that one of the things that happened when we moved to agriculture is we diminish the diversity of our diet. Um, we had plenty more calories. That's a good start, but we missed out on things that were nutrients that were not necessarily present in all our plants.' (1:24-1:34)"
+        },
+        {
+          "id": "rUQHPm7xfpY-q7",
+          "type": "multi_hop",
+          "follow_up_to": "rUQHPm7xfpY-q5",
+          "question": "What is the significance of the lactase persistence gene in the context of human evolution?",
+          "ground_truth": "The lactase persistence gene allowed humans to digest milk as adults, which became beneficial when dairying was introduced, providing a significant survival advantage during times of food scarcity.",
+          "evidence": "The transcript fragment and timecode that support it is: 'And this is a very nice example of evolution, shaping evolution because, as you will know, um, those of you in particular who've got domestic pets, cats, dogs, etc. The basic rule for all mammals is that baby mammals drink milk and big mammals don't. Right? If you have a puppy, a puppy drinks milk. When you wean the puppy and have an adult dog, if you give your adult dog a bowl of milk, it will vomit it all back up again. Okay? And that is true for most mammals. It is also historically true for humans. Historically, evolutionarily, humans could also not consume milk as adults. We would drink milk as babies. we would wean and then we would become what's called lactose intolerant because you would miss the enzyme to digest it. That was not a problem until we started dairying. We started keeping cattle and sheep and other things for their milk. And then it became quite useful to be able to digest that milk even as an adult. There is a mutation that is presumably quite rare in nature that keeps that gene on into adulthood. And for the last million years or so, that's been totally irrelevant. But suddenly when we started to have a ready source of milk as adults, having that version of the gene was very beneficial. And the time it was particularly beneficial was when times got really tough. So for example, uh when in winter when there's no food around, um you were essentially on the brink of starvation. If you had a cow and you could drink that milk and not to vomit it back up again, you had a significant chance of survival. If you drank it and threw it back up again and got no calories from it, that was not helpful. And so what we see here is the very very strong selective pressure to have this version of the gene that allows us to metabolize milk.' (1:45-1:56)"
+        },
+        {
+          "id": "rUQHPm7xfpY-q8",
+          "type": "follow_up",
+          "follow_up_to": "rUQHPm7xfpY-q7",
+          "question": "Can you explain more about how the lactase persistence gene works?",
+          "ground_truth": "The lactase persistence gene works by having a mutation that prevents the lactase enzyme from being turned off after weaning, allowing adults to digest lactose in milk.",
+          "evidence": "The transcript fragment and timecode that support it is: 'So, so how does the lactose gene work? So essentially you have a gene lactase which helps you digest milk sugars, lactose. If you can't digest the sugar, it makes you sick and you you vomit it back up again. So having that enzyme expressed produced is critical to be able to digest milk. Genes work. You have the thing that you're making. So that enzyme and what's called a promoter sequence beside it which tells the body when to when to put that protein into production, when to turn it off. So for instance, there are some proteins that are produced at different times of the menstrual cycle if you're female or when you go into adolescence or so on and so forth. You don't want you the gene for beards being turned on when you're six months old. Uh you only want it when you're when you're in puberty. Um and so so those promoters are if you like the timer lactase, this enzyme has a timer which says turn me off forever as soon as you finish you know wean as soon as you finish drinking milk from your mother. [snorts] Um, and that works brilliantly well in all animals, including ourselves. What we have done at some point in in in evolutionary time is there has been a mutation that has broken that switch and it stays on forever. [snorts] No use at all. In fact, in fact, possibly slightly disadvantageous because you're making a protein that's of no relevance. Um, up until the point when you start being exposed to milk as an adult, then massively massively important. So, so that's how it works.' (2:15-2:26)"
+        },
+        {
+          "id": "rUQHPm7xfpY-q9",
+          "type": "follow_up",
+          "follow_up_to": "rUQHPm7xfpY-q8",
+          "question": "How does lactose intolerance affect the expression of the lactase gene over the life course?",
+          "ground_truth": "Lactose intolerance occurs when the lactase gene is not expressed due to a mutation that prevents the lactase enzyme from being produced, leading to an inability to digest lactose in milk.",
+          "evidence": "The transcript fragment and timecode that support it is: 'And the question about inheritance, so there are two sorts actually of lactose intolerance. I should have made that clear. The clean genetic type is that. So if you don't have the enzyme, you can't digest the sugar, you're lactose intolerant. There are secondary issues, for example, allergies to milk which are nothing to do with that enzyme um and and are to do with whether you've been stimulated by a particular antigen. So on so forth. So I guess the the cautionary tale here is don't be [snorts] listening to this at home and thinking, \"Oh, actually my milk allergy is all nonsense. I don't have that gene. I'm going to go and drink milk.\" If you've been told you're milk allergic, don't drink milk. Okay? Regardless of whether you have this gene or not. There are different systems. Um, but yes, if you are genetically lactose intolerant, then whether your children are or not depends on the gene of your partner too because if you if your partner is lactose tolerant and they're lucky, they'll get that gene and not yours.' (2:35-2:46)"
+        },
+        {
+          "id": "rUQHPm7xfpY-q10",
+          "type": "off_topic",
+          "follow_up_to": null,
+          "question": "How do mRNA vaccines affect our genome and long-term health?",
+          "ground_truth": "mRNA vaccines do not affect our genome or have any long-term health effects as they do not integrate into our DNA and are not inherited.",
+          "evidence": "The transcript fragment and timecode that support it is: 'So, mRNA vaccines, which we're all familiar with. So, the good so the clever thing about mRNA vaccines is they don't integrate into your genomes. They produce a protein, but they don't get inherited. So, [snorts] if like me and hopefully like all of you, you've been you've been vaccinated quite possibly with an MRA vaccine. You're not going to pass that on to your kids. It's not inherited in any way. Um, it is a transient, if you like, uh, process.' (3:05-3:16)"
+        }
+      ]
+    },
+    {
+      "video_id": "Qi4KBoirchI",
+      "url": "https://www.youtube.com/watch?v=Qi4KBoirchI",
+      "title": "Dyslexia and Language - Disorder or Difference? - Maggie Snowling CBE",
+      "language": "en",
+      "minutes": 1,
+      "questions": [
+        {
+          "id": "Qi4KBoirchI-q1",
+          "type": "factual",
+          "follow_up_to": null,
+          "question": "What is dyslexia?",
+          "ground_truth": "Dyslexia is a neurodevelopmental disorder characterized by difficulty in acquiring reading and spelling fluency.",
+          "evidence": "{'transcript': 'Well, put simply, dyslexia is simply a difficulty in acquiring reading and spelling fluency.', 'timecode': '0:05'}"
+        },
+        {
+          "id": "Qi4KBoirchI-q2",
+          "type": "factual",
+          "follow_up_to": null,
+          "question": "Who first identified dyslexia?",
+          "ground_truth": "Dyslexia was first identified by Pringle Morgan in 1896.",
+          "evidence": "{'transcript': 'As you may know, dyslexia was first identified or reported in this country in 1896 by a general practitioner, Pringle Morgan.', 'timecode': '0:23'}"
+        },
+        {
+          "id": "Qi4KBoirchI-q3",
+          "type": "factual",
+          "follow_up_to": null,
+          "question": "What percentage of the population has dyslexia?",
+          "ground_truth": "About 7% of the population has dyslexia.",
+          "evidence": "{'transcript': 'Population studies suggest that about 7% of the population has dyslexia.', 'timecode': '0:30'}"
+        },
+        {
+          "id": "Qi4KBoirchI-q4",
+          "type": "summary",
+          "follow_up_to": null,
+          "question": "What are the main challenges faced by individuals with dyslexia?",
+          "ground_truth": "Individuals with dyslexia face challenges such as difficulty in acquiring reading and spelling fluency, poor educational achievement, and limited job opportunities.",
+          "evidence": "{'transcript': 'Dyslexia is important to society, not least because poor reading and spelling in primary school often leads to disengagement from school, poor educational achievement in secondary school, and this is in turn will lead to limited job opportunities, low levels of adult productivity and well-being.', 'timecode': '0:10'}"
+        },
+        {
+          "id": "Qi4KBoirchI-q5",
+          "type": "multi_hop",
+          "follow_up_to": null,
+          "question": "What are the two main risk factors for dyslexia?",
+          "ground_truth": "The two main risk factors for dyslexia are a phonological deficit and an earlier and persisting language impairment.",
+          "evidence": "{'transcript': 'The first risk is the risk I've been talking about the funological deficit. The second risk is an earlier uh and persisting language um impairment.', 'timecodes': ['0:45', '0:50']}"
+        },
+        {
+          "id": "Qi4KBoirchI-q6",
+          "type": "follow_up",
+          "follow_up_to": "Qi4KBoirchI-q5",
+          "question": "Can you explain more about the phonological deficit?",
+          "ground_truth": "The phonological deficit in dyslexia refers to problems with the way the brain represents speech sounds, leading to difficulties in reading and spelling.",
+          "evidence": "{'transcript': 'The problem in dyslexia is with this phmic system. The funological representations, the way in which our brain represents speech sounds.', 'timecode': '0:40'}"
+        },
+        {
+          "id": "Qi4KBoirchI-q7",
+          "type": "multi_hop",
+          "follow_up_to": null,
+          "question": "What are the potential benefits of early language intervention for children at risk of dyslexia?",
+          "ground_truth": "Early language intervention can improve children's language skills, provide a strong foundation for reading, and have a beneficial effect on their behavior.",
+          "evidence": "{'transcript': 'We now have strong evidence from two research and three much larger scale randomized trials that this early language intervention works. It improves children's language. It has a beneficial effect on the foundations for reading and it also actually improves their behavior.', 'timecodes': ['0:55', '0:58']}"
+        },
+        {
+          "id": "Qi4KBoirchI-q8",
+          "type": "follow_up",
+          "follow_up_to": "Qi4KBoirchI-q7",
+          "question": "How does early language intervention work?",
+          "ground_truth": "Early language intervention works by delivering a 20-week program of language development, including narrative skills, vocabulary enrichment, and speaking and listening training.",
+          "evidence": "{'transcript': 'Nelly has two 10-week uh modules. Um and in each module there's a alternating each week between group and individual sessions. There are three themes developing narrative skills, enriching vocabulary and improving speaking and listening.', 'timecode': '1:00'}"
+        },
+        {
+          "id": "Qi4KBoirchI-q9",
+          "type": "off_topic",
+          "follow_up_to": null,
+          "question": "Are there any cultural or societal factors that influence the perception and diagnosis of dyslexia?",
+          "ground_truth": "The video does not cover the subject of cultural or societal factors influencing the perception and diagnosis of dyslexia.",
+          "evidence": "{'transcript': 'The video does not cover the subject of cultural or societal factors influencing the perception and diagnosis of dyslexia.', 'timecode': 'N/A'}"
+        },
+        {
+          "id": "Qi4KBoirchI-q10",
+          "type": "factual",
+          "follow_up_to": null,
+          "question": "What is the role of speech and language therapists in the management of dyslexia?",
+          "ground_truth": "Speech and language therapists can play a role in assessing and treating underlying language problems in children with dyslexia.",
+          "evidence": "{'transcript': 'I think because um dyslexia is um typically thought of as part of the school system and part of teaching reading, speech and language therapists are kind of um pushed out and not expected to contribute. But clearly many of children with dyslexia have underlying language problems that are neither being assessed nor treated.', 'timecode': '1:20'}"
+        }
+      ]
+    },
+    {
+      "video_id": "UrRgkK_sEUs",
+      "url": "https://www.youtube.com/watch?v=UrRgkK_sEUs",
+      "title": "From Thin Air: Minimalist and process music from Africa to Arvo Pärt - Milton Mermikides",
+      "language": "en",
+      "minutes": 1,
+      "questions": [
+        {
+          "id": "UrRgkK_sEUs-q1",
+          "type": "factual",
+          "follow_up_to": null,
+          "question": "Who is the Gresham Professor of Music?",
+          "ground_truth": "Professor Milton Mermices",
+          "evidence": "{'So it only remains for me to uh ask you to give a very warm welcome to Professor Milton Mermices, the Gresham Professor of Music, who will be speaking on from Thin Air.'}"
+        },
+        {
+          "id": "UrRgkK_sEUs-q2",
+          "type": "factual",
+          "follow_up_to": null,
+          "question": "What is the term for the smallest possible code to produce any result?",
+          "ground_truth": "mogarov complexity",
+          "evidence": "{'There's this term we call mogarov complexity which is the smallest possible code we can write to produce any result or Shannon entropy which is the sort of formational weight of it.'}"
+        },
+        {
+          "id": "UrRgkK_sEUs-q3",
+          "type": "factual",
+          "follow_up_to": null,
+          "question": "What is the name of the sequence also known as the hailstone sequence or wondrous numbers?",
+          "ground_truth": "collatz sequence",
+          "evidence": "{'This, you may know, is known as the collatz sequence or the 3 n +1 sequence. It's also called the hailstone sequence or wondrous numbers.'}"
+        },
+        {
+          "id": "UrRgkK_sEUs-q4",
+          "type": "summary",
+          "follow_up_to": null,
+          "question": "How does simple music create complex emotional effects?",
+          "ground_truth": "Simple music can create complex emotional effects through perceptual depth, where music grows from a recipe into the music itself and also grows in our minds.",
+          "evidence": "{'Not only can simple scores can create complex music but simple music can create complex emotional effects. We'll call that perceptual depth. So we have two ways that music can grow. It can grow from a recipe into the music itself and also it can grow in our minds.'}"
+        },
+        {
+          "id": "UrRgkK_sEUs-q5",
+          "type": "multi_hop",
+          "follow_up_to": null,
+          "question": "What is the connection between the interlocking patterns in African music and the patterns found in nature?",
+          "ground_truth": "The interlocking patterns in African music and the patterns found in nature both exhibit a similar distribution known as the ukidian distribution, where objects stay as far away from each other as possible.",
+          "evidence": [
+            "{'In fact, it appears in nature [music] how crystals form have a similar pattern. It's known as a ukidian distribution.'}",
+            "{'They're not played together. Remember, this is one instrument. They're sharing the same bars. They interlock.'}"
+          ]
+        },
+        {
+          "id": "UrRgkK_sEUs-q6",
+          "type": "follow_up",
+          "follow_up_to": "UrRgkK_sEUs-q5",
+          "question": "Can you explain more about the ukidian distribution and its significance in music and nature?",
+          "ground_truth": "The ukidian distribution is a pattern that emerges where objects stay as far away from each other as possible. In music, it is seen in the interlocking patterns of African music, while in nature, it is found in rock formations, tree growth, and crystal formations.",
+          "evidence": "{'In fact, it appears in nature [music] how crystals form have a similar pattern. It's known as a ukidian distribution. We find it in rock formations and even [music] in tree growth.'}"
+        },
+        {
+          "id": "UrRgkK_sEUs-q7",
+          "type": "multi_hop",
+          "follow_up_to": null,
+          "question": "How does Steve Reich's work with tape loops influence his composition of Pendulum Music?",
+          "ground_truth": "Steve Reich's work with tape loops influenced his composition of Pendulum Music by inspiring him to experiment with microphasing, where instead of jumping to the next position, he slowly morphed to it, creating an impossible number of patterns.",
+          "evidence": [
+            "{'But influenced by his work with tape, he also experimented with what we might call microphasing.'}",
+            "{'So instead of just jumping to the next position, slowly morphing to it.'}"
+          ]
+        },
+        {
+          "id": "UrRgkK_sEUs-q8",
+          "type": "follow_up",
+          "follow_up_to": "UrRgkK_sEUs-q7",
+          "question": "Can you provide an example of how microphasing is used in Pendulum Music?",
+          "ground_truth": "In Pendulum Music, microphasing is used by playing one melodic idea against itself, where one goes slightly faster than the other until it reaches the next position, hangs there, and does it again.",
+          "evidence": "{'And what happens is one goes slightly faster than the other until it reaches the next position, hangs there, and does it again.'}"
+        },
+        {
+          "id": "UrRgkK_sEUs-q9",
+          "type": "off_topic",
+          "follow_up_to": null,
+          "question": "What is the significance of the number 13 in the composition of Credo by Arvo Part?",
+          "ground_truth": "The video does not cover the significance of the number 13 in the composition of Credo by Arvo Part.",
+          "evidence": ""
+        },
+        {
+          "id": "UrRgkK_sEUs-q10",
+          "type": "summary",
+          "follow_up_to": null,
+          "question": "How does Arvo Part's technique of tintenav work in his composition for Alina?",
+          "ground_truth": "In Arvo Part's composition for Alina, the technique of tintenav involves a sad bell tone in the bass and a bare melody, where the top voice (M voice) and the bell-like tones (T voice) are matched rhythmically but not identical, creating a tender pain when they rub against each other in seconds.",
+          "evidence": "{'Now just to explain the M voice can play anything. We can do what we please. But the T voice is always drawn from one triad. One just three notes. So you get these this tender pain occasionally where they rub against each other in seconds.'}"
+        }
+      ]
+    },
+    {
+      "video_id": "fFCDvsq6N5g",
+      "url": "https://www.youtube.com/watch?v=fFCDvsq6N5g",
+      "title": "Does having a big brain make you smarter? - Alain Goriely",
+      "language": "en",
+      "minutes": 55,
+      "questions": [
+        {
+          "id": "fFCDvsq6N5g-q1",
+          "type": "factual",
+          "follow_up_to": null,
+          "question": "What is the Flynn effect?",
+          "ground_truth": "The Flynn effect is the phenomenon where IQ scores have increased over time, even when renormalized to a score of 100.",
+          "evidence": "we score much better in IQ than 100 years ago that people would give the same test so there's been the type of renormalization that you talk about has been moved up all the year to be back to 100 this is called the Flyn effect that has been studied in detail and we know some aspect of it including uh size I've shown that size may explain about 10% of that effect"
+        },
+        {
+          "id": "fFCDvsq6N5g-q2",
+          "type": "factual",
+          "follow_up_to": null,
+          "question": "What is the correlation between brain size and intelligence?",
+          "ground_truth": "There is a definite effect of brain size on intelligence, but it is not fully understood and has plateaued.",
+          "evidence": "there is a lot of renormalization when you compare different groups racial group group between ages between different period in time between different gender so be extremely cautious and critical with anything that you WR in this area if you want to know you have to go to the primary source you have to understand get the dat data what did people do is that statement correct and so on that's important"
+        },
+        {
+          "id": "fFCDvsq6N5g-q3",
+          "type": "factual",
+          "follow_up_to": null,
+          "question": "What is the speaker's stance on consciousness?",
+          "ground_truth": "The speaker does not work directly on consciousness and has a pragmatic mathematician's approach to the topic.",
+          "evidence": "Consciousness that's a big topic uh my own so my own work direct work does not say anything about Consciousness I don't work directly in Consciousness"
+        },
+        {
+          "id": "fFCDvsq6N5g-q4",
+          "type": "summary",
+          "follow_up_to": null,
+          "question": "What is the speaker's opinion on the relationship between brain size and intelligence?",
+          "ground_truth": "The speaker believes that there is a correlation between brain size and intelligence, but it is not fully understood and has plateaued.",
+          "evidence": "there is a definite effect and it's not fully understood it's more or less plateaued now but it's not fully understood"
+        },
+        {
+          "id": "fFCDvsq6N5g-q5",
+          "type": "summary",
+          "follow_up_to": null,
+          "question": "What is the speaker's opinion on the scaling of IQ tests?",
+          "ground_truth": "The speaker believes that IQ tests are commercial and keep everything under wraps, making it hard to know if they have been deliberately scaled to show no difference between genders.",
+          "evidence": "it's very hard to know what they do uh because all these tests are very commercial and they keeped everything under wrap"
+        },
+        {
+          "id": "fFCDvsq6N5g-q6",
+          "type": "multi_hop",
+          "follow_up_to": null,
+          "question": "What is the speaker's opinion on the relationship between brain size and intelligence, and how does it relate to the Flynn effect?",
+          "ground_truth": "The speaker believes that there is a correlation between brain size and intelligence, but it is not fully understood and has plateaued. The Flynn effect, which is the phenomenon where IQ scores have increased over time, may be partially explained by the increase in human size over the period.",
+          "evidence": [
+            {
+              "fragment": "there is a definite effect and it's not fully understood it's more or less plateaued now but it's not fully understood",
+              "timecode": "0:15:30"
+            },
+            {
+              "fragment": "we know some aspect of it including uh size I've shown that size may explain about 10% of that effect",
+              "timecode": "0:16:10"
+            }
+          ]
+        },
+        {
+          "id": "fFCDvsq6N5g-q7",
+          "type": "multi_hop",
+          "follow_up_to": null,
+          "question": "What is the speaker's opinion on the scaling of IQ tests, and how does it relate to the comparison of group racial group and all that?",
+          "ground_truth": "The speaker believes that IQ tests are commercial and keep everything under wraps, making it hard to know if they have been deliberately scaled to show no difference between genders. When comparing different groups, racial group, and all that, it is important to be extremely cautious and critical with anything written in this area.",
+          "evidence": [
+            {
+              "fragment": "it's very hard to know what they do uh because all these tests are very commercial and they keeped everything under wrap",
+              "timecode": "0:12:00"
+            },
+            {
+              "fragment": "so if anything you have to be extremely extremely careful with all of this",
+              "timecode": "0:13:20"
+            }
+          ]
+        },
+        {
+          "id": "fFCDvsq6N5g-q8",
+          "type": "follow_up",
+          "follow_up_to": "fFCDvsq6N5g-q6",
+          "question": "Can you explain more about how the Flynn effect may be partially explained by the increase in human size over the period?",
+          "ground_truth": "The speaker mentioned that the increase in human size over the period may explain about 10% of the Flynn effect.",
+          "evidence": "we know some aspect of it including uh size I've shown that size may explain about 10% of that effect"
+        },
+        {
+          "id": "fFCDvsq6N5g-q9",
+          "type": "follow_up",
+          "follow_up_to": "fFCDvsq6N5g-q7",
+          "question": "Can you provide more details on how to be cautious and critical when comparing different groups, racial group, and all that?",
+          "ground_truth": "The speaker advises going to the primary source, understanding the data, and being cautious and critical with anything written in this area.",
+          "evidence": "if you want to know you have to go to the primary source you have to understand get the dat data what did people do is that statement correct and so on that's important"
+        },
+        {
+          "id": "fFCDvsq6N5g-q10",
+          "type": "off_topic",
+          "follow_up_to": null,
+          "question": "What is the speaker's opinion on the relationship between brain size and creativity?",
+          "ground_truth": "The video does not cover the relationship between brain size and creativity.",
+          "evidence": "N/A"
+        }
+      ]
+    },
+    {
+      "video_id": "IjfzEbHmWZ8",
+      "url": "https://www.youtube.com/watch?v=IjfzEbHmWZ8",
+      "title": "Democracy: Ancient Models, Modern Challenges - Melissa Lane",
+      "language": "en",
+      "minutes": 58,
+      "questions": [
+        {
+          "id": "IjfzEbHmWZ8-q1",
+          "type": "factual",
+          "follow_up_to": null,
+          "question": "What did Aristotle say about the appointment to all offices in democracy?",
+          "ground_truth": "Aristotle said that the appointment to all offices should be made by lot, except for those that require experience and skill.",
+          "evidence": "Aristotle wrote that the appointment to all offices should be made by lot and the caveat is that those which require experience and skill should be elected."
+        },
+        {
+          "id": "IjfzEbHmWZ8-q2",
+          "type": "factual",
+          "follow_up_to": null,
+          "question": "What did the ancient Greeks think about elections?",
+          "ground_truth": "The ancient Greeks saw elections as inherently tending to be oligarchic and aristocratic.",
+          "evidence": "The ancient Greeks saw elections as inherently tending to be oligarchic and aristocratic as the scholar Bernard Manan has emphasized."
+        },
+        {
+          "id": "IjfzEbHmWZ8-q3",
+          "type": "factual",
+          "follow_up_to": null,
+          "question": "What is the root of the word 'democracy'?",
+          "ground_truth": "The root of the word 'democracy' is 'damos' which means people.",
+          "evidence": "Democratia is people power. But self-evidently, this can't mean and it doesn't mean that all the people rule and that they all simultaneously hold the offices."
+        },
+        {
+          "id": "IjfzEbHmWZ8-q4",
+          "type": "summary",
+          "follow_up_to": null,
+          "question": "What are the characteristics of democracy according to Aristotle?",
+          "ground_truth": "The characteristics of democracy according to Aristotle are: appointment to all offices should be made by lot, no property qualification should be required for office, tenure of all offices should be brief, all should be eligible to be chosen as jurors, and the assembly should vote and be decisive on all issues.",
+          "evidence": "Aristotle's list of the characteristic hallmarks of democracy includes: appointment to all offices should be made by lot, no property qualification should be required for office, tenure of all offices should be brief, all should be eligible to be chosen as jurors, and the assembly should vote and be decisive on all issues."
+        },
+        {
+          "id": "IjfzEbHmWZ8-q5",
+          "type": "multi_hop",
+          "follow_up_to": null,
+          "question": "What are the two oppositions between ancient and modern politics according to Benjamin Constant and James Madison?",
+          "ground_truth": "The two oppositions between ancient and modern politics according to Benjamin Constant and James Madison are: ancient and modern liberty, and ancient and modern democracy.",
+          "evidence": "Benjamin Constant argued that Athenian style democracy and Greek politics generally was unsuited to modern economic and social life. James Madison distinguished between direct democracy and representative democracy."
+        },
+        {
+          "id": "IjfzEbHmWZ8-q6",
+          "type": "follow_up",
+          "follow_up_to": "IjfzEbHmWZ8-q5",
+          "question": "Can we gain more insight by comparing distinct powers of decision and control in ancient and modern democracies?",
+          "ground_truth": "Yes, we can gain more insight by comparing distinct powers of decision and control in ancient and modern democracies.",
+          "evidence": "Ancient and modern democracies are more like two different mosaics with different concentrations of stones in different places, not so much like two utterly different art forms altogether."
+        },
+        {
+          "id": "IjfzEbHmWZ8-q7",
+          "type": "multi_hop",
+          "follow_up_to": "IjfzEbHmWZ8-q6",
+          "question": "What are some ways to introduce wider opportunities for decision-making and popular control in modern democracies?",
+          "ground_truth": "Some ways to introduce wider opportunities for decision-making and popular control in modern democracies are: using lottery to choose office holders, choosing bodies of citizens to vote on public policy questions, and using lottery chosen auditors.",
+          "evidence": "Modern political scientists have suggested using lottery to choose office holders, choosing bodies of citizens to vote on public policy questions, and using lottery chosen auditors."
+        },
+        {
+          "id": "IjfzEbHmWZ8-q8",
+          "type": "follow_up",
+          "follow_up_to": "IjfzEbHmWZ8-q7",
+          "question": "Can lottery chosen auditors be implemented immediately in different countries?",
+          "ground_truth": "Lottery chosen auditors can be implemented immediately in countries with a reasonably free press and where the auditors can publish their conclusions and have their conclusions hold sway with the electorate.",
+          "evidence": "Lottery chosen auditors can be implemented immediately in countries with a reasonably free press and where the auditors can publish their conclusions and have their conclusions hold sway with the electorate."
+        },
+        {
+          "id": "IjfzEbHmWZ8-q9",
+          "type": "off_topic",
+          "follow_up_to": null,
+          "question": "What is the role of slavery in ancient Greek democracy?",
+          "ground_truth": "The video does not cover the role of slavery in ancient Greek democracy.",
+          "evidence": "The video does not cover the role of slavery in ancient Greek democracy."
+        },
+        {
+          "id": "IjfzEbHmWZ8-q10",
+          "type": "summary",
+          "follow_up_to": null,
+          "question": "How did democracy come into being in Athens and other Greek city-states?",
+          "ground_truth": "Democracy in Athens and other Greek city-states developed over time through various democratizing moments and institutions, such as the right of appeal, reorganization of tribes, and pay for serving in the popular courts.",
+          "evidence": "Democracy in Athens and other Greek city-states developed over time through various democratizing moments and institutions, such as the right of appeal, reorganization of tribes, and pay for serving in the popular courts."
+        }
+      ]
+    },
+    {
+      "video_id": "AvVZevycQZI",
+      "url": "https://www.youtube.com/watch?v=AvVZevycQZI",
+      "title": "Logarithms: Mobile Phones, Modelling & Statistics? - Oliver Johnson",
+      "language": "de",
+      "minutes": 52,
+      "questions": [
+        {
+          "id": "AvVZevycQZI-q1",
+          "type": "factual",
+          "follow_up_to": null,
+          "question": "Was ist die Definition des natürlichen Logarithmus?",
+          "ground_truth": "Der natürliche Logarithmus ist die Hochzahl, die bei der Exponentialgleichung e hoch x = 2 eine wahre Aussage ergibt.",
+          "evidence": "LN2 ist die Hochzahl die eingesetzt bei E hoch x = 2 eine wahre Aussage ergibt"
+        },
+        {
+          "id": "AvVZevycQZI-q2",
+          "type": "factual",
+          "follow_up_to": null,
+          "question": "Was ist der natürliche Logarithmus von 1?",
+          "ground_truth": "Der natürliche Logarithmus von 1 ist 0.",
+          "evidence": "logarithmus von 1 = 0 weil die 0 als Hochzahl mit E hoch 0 = 1 ergibt"
+        },
+        {
+          "id": "AvVZevycQZI-q3",
+          "type": "summary",
+          "follow_up_to": null,
+          "question": "Wie wird der natürliche Logarithmus einer Zahl ohne Taschenrechner berechnet?",
+          "ground_truth": "Der natürliche Logarithmus einer Zahl wird ohne Taschenrechner durch die Analogie zur Wurzel und verschiedene Lösungsvarianten wie Intervallschachtelung berechnet.",
+          "evidence": "wir finden auf natürliche Weise die Definition des Logarithmus und sehen auch wie wir logarithmuswerte ohne Taschenrechner bestimmen können"
+        },
+        {
+          "id": "AvVZevycQZI-q4",
+          "type": "multi_hop",
+          "follow_up_to": null,
+          "question": "Wie wird der natürliche Logarithmus von 2 berechnet und was ist das Ergebnis?",
+          "ground_truth": "Der natürliche Logarithmus von 2 wird durch verschiedene Lösungsvarianten berechnet und das Ergebnis ist ungefähr 0,7.",
+          "evidence": [
+            {
+              "timecode": "0:03:00",
+              "fragment": "wir übertragen das auf unseren Rechten Fall und definieren den LN2 als die Hochzahl die eingesetzt bei E hooch x = 2 eine wahre Aussage ergibt"
+            },
+            {
+              "timecode": "0:04:30",
+              "fragment": "damit haben wir mit 0,7 eine Hochzahl gefunden die hier eingesetzt ungefähr den wer 2 ergibt und damit eine gute Nährung für den Logarithmus von 2 sein muss"
+            }
+          ]
+        },
+        {
+          "id": "AvVZevycQZI-q5",
+          "type": "follow_up",
+          "follow_up_to": "AvVZevycQZI-q4",
+          "question": "Warum ist das Ergebnis des natürlichen Logarithmus von 2 ungefähr 0,7?",
+          "ground_truth": "Das Ergebnis ist ungefähr 0,7, weil es durch verschiedene Lösungsvarianten wie Intervallschachtelung berechnet wurde.",
+          "evidence": "genauer können wir das ohne Taschenrechner nicht hinbekommen e 0,6 wä jetzt mit Taschenrechner möglich zu berechnen kleiner als 2 e h 0,7 ist d zu groß also muss unsere gesuchte Zahl hier für die Hochzahl von E zwischen 0,6 und 0,7 liegen"
+        },
+        {
+          "id": "AvVZevycQZI-q6",
+          "type": "factual",
+          "follow_up_to": null,
+          "question": "Was ist der natürliche Logarithmus von e?",
+          "ground_truth": "Der natürliche Logarithmus von e ist 1.",
+          "evidence": "lne = 1 weil 1 als Hochzahl von E hoch 1 = e ergibt"
+        },
+        {
+          "id": "AvVZevycQZI-q7",
+          "type": "multi_hop",
+          "follow_up_to": null,
+          "question": "Was ist der natürliche Logarithmus von e hoch 3 und wie wird er berechnet?",
+          "ground_truth": "Der natürliche Logarithmus von e hoch 3 ist 3 und er wird durch die Definition des Logarithmus berechnet.",
+          "evidence": [
+            {
+              "timecode": "0:10:00",
+              "fragment": "LN hoch 3 ist natürlich GLE 3"
+            },
+            {
+              "timecode": "0:11:30",
+              "fragment": "die Hochzahl 3 ergibt bei der exponentialgleichung e hoch Fragezeichen = e hoch 3 eine wahre Aussage"
+            }
+          ]
+        },
+        {
+          "id": "AvVZevycQZI-q8",
+          "type": "follow_up",
+          "follow_up_to": "AvVZevycQZI-q7",
+          "question": "Warum ergibt die Funktion e hoch LN x die ursprüngliche Zahl x?",
+          "ground_truth": "Die Funktion e hoch LN x ergibt die ursprüngliche Zahl x, weil die LN Funktion und die e-Funktion sich gegenseitig aufheben.",
+          "evidence": "die LN Funktion und die efunktion sich gegenseitig aufheben"
+        },
+        {
+          "id": "AvVZevycQZI-q9",
+          "type": "off_topic",
+          "follow_up_to": null,
+          "question": "Welche Anwendungsgebiete des natürlichen Logarithmus werden im Video beschrieben?",
+          "ground_truth": "Das Video behandelt nicht die Anwendungsgebiete des natürlichen Logarithmus.",
+          "evidence": "Die Anwendungsgebiete des natürlichen Logarithmus werden in einem gesonderten Video beschrieben."
+        },
+        {
+          "id": "AvVZevycQZI-q10",
+          "type": "summary",
+          "follow_up_to": null,
+          "question": "Wie wird die Beziehung zwischen der e-Funktion und der natürlichen Logarithmusfunktion beschrieben?",
+          "ground_truth": "Die Beziehung zwischen der e-Funktion und der natürlichen Logarithmusfunktion wird als symmetrisch beschrieben, ähnlich wie die Wurzelfunktion und die Quadratfunktion.",
+          "evidence": "diese Zusammenhang können wir auch an den beiden Schaubildern erkennen diese sind symmetrisch zur ersten Winkelhalbierenden"
+        }
+      ]
+    }
+  ]
+}
