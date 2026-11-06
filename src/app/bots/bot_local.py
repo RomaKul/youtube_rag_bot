@@ -52,7 +52,7 @@ from youtube_transcript_api import (
 # Chunking utilities
 from app.rag.chunking import (
     ChunkingConfig, Segment, build_documents,
-    segments_from_fetched, count_tokens,
+    count_tokens,
 )
 
 # Router, hybrid search, and routed graph
@@ -145,7 +145,7 @@ def build_embeddings() -> Embeddings:
 
 # ── YouTube transcript ──────────────────────────────────────────────────────────
 def extract_video_id(url: str) -> Optional[str]:
-    match = re.search(r"(?:v=|youtu\.be/|embed/|shorts/)([A-Za-z0-9_-]{11})", url)
+    match = re.search(r"(?:v=|youtu\.be/|embed/|shorts/|live/)([A-Za-z0-9_-]{11})", url)
     return match.group(1) if match else None
 
 

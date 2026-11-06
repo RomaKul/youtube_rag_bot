@@ -265,6 +265,7 @@ def sentence_aware_chunks(
     chunk_tokens: int = 300,
     overlap_sentences: int = 1,
     split_sentences: bool = True,
+    overlap_tokens: int = 30,
 ) -> list[Document]:
     """
     split_sentences=True:  groups whole sentences into windows of <= chunk_tokens

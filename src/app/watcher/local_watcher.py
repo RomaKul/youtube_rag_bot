@@ -83,7 +83,7 @@ def fetch_transcript_locally(video_id: str) -> tuple[str, list[Segment], str, st
     status = (
         f"✅ Transcript loaded ({len(segments)} segments) — "
         f"language: {chosen.language} [{chosen.language_code}], {kind}"
-    )    
+    )
     return full_text, segments, kind, chosen.language_code, status
 
 

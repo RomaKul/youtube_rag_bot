@@ -350,7 +350,7 @@ async def receive_question(update, context: ContextTypes.DEFAULT_TYPE):
     bot.py first (local dev) then bot_aws.py (AWS deployment) — both define
     the same ASK_URL, ASK_LANG, ASK_QUESTION = range(3) constants.
     """
-    from app.bots.bot_core import ASK_QUESTION
+    from app.bots.bot_local import ASK_QUESTION
 
     agent = context.user_data.get("agent")
     if not agent:
