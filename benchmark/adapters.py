@@ -335,13 +335,35 @@ def answer_question(
 # 4. Judge model for RAGAS
 # ---------------------------------------------------------------------------
 def get_judge():
+    """
+    Two independent timeout layers matter here, and RAGAS's RunConfig (set in
+    evaluate.py) only controls one of them:
+
+      1. botocore's own HTTP read_timeout on the Bedrock client — defaults to
+         60s. If a Nova Pro call is genuinely just slow (not stuck), botocore
+         kills the connection at 60s regardless of what RAGAS is configured
+         to tolerate. Raised to 180s below.
+      2. RAGAS's RunConfig.timeout — how long RAGAS waits for a job before
+         giving up and retrying/erroring. Set alongside this in evaluate.py.
+
+    A `Config(retries={"max_attempts": ...})` here also lets boto3 itself
+    retry on throttling with backoff, on top of whatever RAGAS retries —
+    belt and suspenders, since it's genuinely ambiguous which layer threw
+    the TimeoutError without CloudWatch logs in front of you.
+    """
+    from botocore.config import Config
     from langchain_aws import ChatBedrockConverse, BedrockEmbeddings
     from ragas.llms import LangchainLLMWrapper
     from ragas.embeddings import LangchainEmbeddingsWrapper
 
     region = os.getenv("AWS_REGION", "us-east-1")
+    boto_config = Config(
+        read_timeout=180,
+        connect_timeout=10,
+        retries={"max_attempts": 8, "mode": "adaptive"},
+    )
     llm = ChatBedrockConverse(model=os.getenv("JUDGE_LLM", "amazon.nova-pro-v1:0"),
-                              region_name=region, temperature=0)
+                              region_name=region, temperature=0, config=boto_config)
     emb = BedrockEmbeddings(model_id=os.getenv("JUDGE_EMBED", "cohere.embed-multilingual-v3"),
-                            region_name=region)
+                            region_name=region, config=boto_config)
     return LangchainLLMWrapper(llm), LangchainEmbeddingsWrapper(emb)

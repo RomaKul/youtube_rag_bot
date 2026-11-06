@@ -34,17 +34,22 @@ def load_raw(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def score(rows: list[dict]) -> pd.DataFrame:
+def score(rows: list[dict], max_workers: int = 4, timeout: int = 180,
+          max_retries: int = 10, sample: int | None = None) -> pd.DataFrame:
     from datasets import Dataset
     from ragas import evaluate
     from ragas.metrics import (faithfulness, answer_relevancy,
                                context_precision, context_recall)
+    from ragas.run_config import RunConfig
     import adapters
 
     usable = [r for r in rows if not r["error"] and r["answer"]]
     skipped = len(rows) - len(usable)
     if skipped:
         print(f"skipping {skipped} failed answers")
+    if sample:
+        usable = usable[:sample]
+        print(f"--sample set: scoring only the first {len(usable)} rows")
 
     ds = Dataset.from_dict({
         "question":     [r["question"] for r in usable],
@@ -53,12 +58,32 @@ def score(rows: list[dict]) -> pd.DataFrame:
         "ground_truth": [r["ground_truth"] for r in usable],
     })
 
+    # RAGAS fans out many concurrent LLM calls per row per metric (faithfulness
+    # alone does a statement-extraction call plus a verification call; context
+    # precision does roughly one call per retrieved chunk). At the default
+    # max_workers=16 this routinely throttles a single Bedrock judge model,
+    # and every throttle becomes a retry-with-backoff, which is what a wall of
+    # TimeoutError and a ballooning ETA usually mean — not that the judge is
+    # actually 4 hours of real work. Lower concurrency, longer per-job
+    # patience, more retries: slower ceiling, far fewer failures in practice.
+    run_config = RunConfig(timeout=timeout, max_retries=max_retries,
+                           max_wait=90, max_workers=max_workers)
+
     judge_llm, judge_emb = adapters.get_judge()
-    result = evaluate(
-        ds,
+    eval_kwargs = dict(
         metrics=[faithfulness, answer_relevancy, context_precision, context_recall],
         llm=judge_llm, embeddings=judge_emb,
+        run_config=run_config,
     )
+    try:
+        # raise_exceptions=False keeps partial results (NaN for the failed
+        # row/metric) instead of losing the whole batch to one bad row.
+        # Dropped automatically if your installed ragas version doesn't
+        # accept this kwarg (the flag's name/presence has moved around
+        # across ragas releases).
+        result = evaluate(ds, raise_exceptions=False, **eval_kwargs)
+    except TypeError:
+        result = evaluate(ds, **eval_kwargs)
 
     scored = result.to_pandas()
     meta = pd.DataFrame([{k: r[k] for k in
@@ -98,24 +123,35 @@ def per_question_type(df: pd.DataFrame) -> pd.DataFrame:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("raw", type=Path)
+    ap.add_argument("--max-workers", type=int, default=4,
+                    help="concurrent RAGAS jobs; lower this first if you see "
+                         "TimeoutError / throttling (default: 4, RAGAS default is 16)")
+    ap.add_argument("--timeout", type=int, default=180,
+                    help="seconds RAGAS waits per job before retrying (default: 180)")
+    ap.add_argument("--max-retries", type=int, default=10)
+    ap.add_argument("--sample", type=int, default=None,
+                    help="score only the first N rows — use this to smoke-test "
+                         "before committing to a full run")
     args = ap.parse_args()
 
     stamp = args.raw.stem.replace("raw_", "")
     out = args.raw.parent
 
     rows = load_raw(args.raw)
-    df = score(rows)
-    df.to_csv(out / f"scored_{stamp}.csv", index=False, encoding="utf-8")
+    df = score(rows, max_workers=args.max_workers, timeout=args.timeout,
+              max_retries=args.max_retries, sample=args.sample)
+    suffix = f"{stamp}_sample{args.sample}" if args.sample else stamp
+    df.to_csv(out / f"scored_{suffix}.csv", index=False, encoding="utf-8")
 
     for exp in ("E1", "E2", "E3"):
         t = article_table(df, exp)
         if not t.empty:
-            t.to_csv(out / f"table_{exp}_{stamp}.csv", index=False, encoding="utf-8")
+            t.to_csv(out / f"table_{exp}_{suffix}.csv", index=False, encoding="utf-8")
             print(f"\n=== {exp} ===")
             print(t.to_string(index=False))
 
     pq = per_question_type(df)
-    pq.to_csv(out / f"by_question_type_{stamp}.csv", index=False, encoding="utf-8")
+    pq.to_csv(out / f"by_question_type_{suffix}.csv", index=False, encoding="utf-8")
     print("\n=== by question type ===")
     print(pq.to_string(index=False))
     return 0

@@ -26,6 +26,7 @@ class RunConfig:
     chunk_strategy: Literal["timestamp", "sentence", "semantic"] = "timestamp"
     chunk_tokens: int = 300
     overlap_sentences: int = 1
+    overlap_tokens: int = 30
     similarity_thr: float = 0.75
 
     # --- retrieval ------------------------------------------------------
@@ -33,7 +34,7 @@ class RunConfig:
     retrieval: str = "hybrid_rerank"
     similarity_k: int = 10   # chunks pulled by each retriever before fusion
     retrieval_top_k: int = 4         # chunks that actually reach the LLM
-
+    split_sentences: bool = True  # whether to split transcripts into sentences before chunking (recommended)
     # --- generation -----------------------------------------------------
     provider: Literal["bedrock", "ollama"] = "bedrock"
     llm_model: str = "amazon.nova-lite-v1:0"
@@ -59,19 +60,19 @@ E2_WINNER = dict(retrieval="hybrid_rerank", similarity_k=10, retrieval_top_k=4)
 
 # --- Experiment 1: chunking strategy ---------------------------------------
 E1 = [
-    RunConfig("E1-1", "E1", "timestamp 300/1",
-              chunk_strategy="timestamp", chunk_tokens=300, overlap_sentences=1,
-              notes="baseline, current production default"),
-    # RunConfig("E1-2", "E1", "sentence 300/30",
-    #           chunk_strategy="sentence", chunk_tokens=300, overlap_sentences=30,
-    #           notes="token split"),
-    RunConfig("E1-3", "E1", "sentence 300/1",
-              chunk_strategy="sentence", chunk_tokens=300, overlap_sentences=1,
-              notes="sentence-aware split, ignores timecodes"),
-    RunConfig("E1-4", "E1", "semantic 300 (thr 0.75)",
-              chunk_strategy="semantic", chunk_tokens=300, overlap_sentences=0,
-              similarity_thr=0.75,
-              notes="embedding-similarity merging"),
+    # RunConfig("E1-1", "E1", "timestamp 300/1",
+    #           chunk_strategy="timestamp", chunk_tokens=300, overlap_sentences=1,
+    #           notes="baseline, current production default"),
+    RunConfig("E1-2", "E1", "sentence 300/30",
+              chunk_strategy="sentence", chunk_tokens=300, overlap_tokens=30,
+              split_sentences=False, notes="token split", ),
+    # RunConfig("E1-3", "E1", "sentence 300/1",
+    #           chunk_strategy="sentence", chunk_tokens=300, overlap_sentences=1,
+    #           notes="sentence-aware split, ignores timecodes"),
+    # RunConfig("E1-4", "E1", "semantic 300 (thr 0.75)",
+    #           chunk_strategy="semantic", chunk_tokens=300, overlap_sentences=0,
+    #           similarity_thr=0.75,
+    #           notes="embedding-similarity merging"),
 ]
 
 # --- Experiment 2: retrieval scheme ----------------------------------------
